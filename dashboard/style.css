@@ -1,20 +1,54 @@
 body{
     font-family:Arial,Helvetica,sans-serif;
+    background:#030712;
 }
 
 .card{
-    background:#1f2937;
-    border-radius:15px;
-    padding:20px;
+    background:#111827;
+    border-radius:16px;
+    padding:25px;
     text-align:center;
+    transition:.3s;
+}
+
+.card:hover{
+    transform:translateY(-4px);
+    background:#1f2937;
 }
 
 .card h2{
     color:#9ca3af;
-    margin-bottom:10px;
+    font-size:15px;
 }
 
 .card p{
-    font-size:2rem;
+    font-size:38px;
     font-weight:bold;
+    margin-top:10px;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th,td{
+    padding:12px;
+    border-bottom:1px solid #374151;
+}
+
+th{
+    color:#9ca3af;
+}
+
+canvas{
+    max-height:350px;
+}
+
+button{
+    transition:.3s;
+}
+
+button:hover{
+    transform:scale(1.05);
 }

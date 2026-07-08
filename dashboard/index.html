@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
 
 <meta charset="UTF-8">
@@ -8,10 +9,9 @@
 <title>Quant Trading Platform</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
-
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="style.css">
 
 </head>
 
@@ -19,29 +19,38 @@
 
 <div class="container mx-auto p-6">
 
-    <div class="flex justify-between items-center">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-8">
 
         <div>
+
             <h1 class="text-4xl font-bold">
                 Quant Trading Platform
             </h1>
 
             <p class="text-gray-400">
-                AI Powered Trading Dashboard
+                AI Powered Quantitative Trading Dashboard
             </p>
+
         </div>
 
-        <div class="bg-green-600 px-4 py-2 rounded-lg">
-            LIVE
+        <div class="bg-green-600 px-5 py-2 rounded-lg font-bold">
+            🟢 LIVE
         </div>
 
     </div>
 
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-5 mt-8">
+    <!-- Dashboard Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-5">
 
         <div class="card">
             <h2>Portfolio</h2>
             <p id="portfolio">$0</p>
+        </div>
+
+        <div class="card">
+            <h2>Cash</h2>
+            <p id="cash">$0</p>
         </div>
 
         <div class="card">
@@ -59,49 +68,113 @@
             <p id="winrate">0%</p>
         </div>
 
+        <div class="card">
+            <h2>Status</h2>
+            <p class="text-green-400">Running</p>
+        </div>
+
     </div>
 
-    <div class="bg-gray-900 mt-8 rounded-xl p-6">
+    <!-- Equity Chart -->
+    <div class="bg-gray-900 rounded-xl p-6 mt-8 shadow-lg">
+
+        <h2 class="text-2xl font-bold mb-4">
+            Portfolio Equity
+        </h2>
 
         <canvas id="equityChart"></canvas>
 
     </div>
 
+    <!-- Open Positions -->
+    <div class="bg-gray-900 rounded-xl p-6 mt-8 shadow-lg">
+
+        <h2 class="text-2xl font-bold mb-4">
+            Open Positions
+        </h2>
+
+        <table class="w-full">
+
+            <thead>
+
+                <tr>
+
+                    <th>Symbol</th>
+                    <th>Side</th>
+                    <th>Entry</th>
+                    <th>Current</th>
+                    <th>P/L</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody id="positions">
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+    <!-- Bottom Section -->
     <div class="grid md:grid-cols-2 gap-6 mt-8">
 
-        <div class="bg-gray-900 rounded-xl p-6">
+        <!-- Trading Status -->
+        <div class="bg-gray-900 rounded-xl p-6 shadow-lg">
 
-            <h2 class="text-xl mb-4">
+            <h2 class="text-2xl font-bold mb-4">
                 Trading Status
             </h2>
 
-            <pre id="status">
+            <pre id="status" class="overflow-auto text-green-300">
 Loading...
             </pre>
 
         </div>
 
-        <div class="bg-gray-900 rounded-xl p-6">
+        <!-- Controls -->
+        <div class="bg-gray-900 rounded-xl p-6 shadow-lg">
 
-            <h2 class="text-xl mb-4">
-                Controls
+            <h2 class="text-2xl font-bold mb-6">
+                Bot Controls
             </h2>
 
-            <button class="bg-green-600 px-5 py-3 rounded-lg">
-                Start Bot
-            </button>
+            <div class="space-y-4">
 
-            <button class="bg-red-600 px-5 py-3 rounded-lg ml-3">
-                Stop Bot
-            </button>
+                <button class="w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-bold">
+                    ▶ Start Paper Trading
+                </button>
+
+                <button class="w-full bg-red-600 hover:bg-red-700 py-3 rounded-lg font-bold">
+                    ■ Stop Bot
+                </button>
+
+                <button class="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-lg font-bold">
+                    📊 Run Backtest
+                </button>
+
+                <button class="w-full bg-purple-600 hover:bg-purple-700 py-3 rounded-lg font-bold">
+                    📄 Generate Report
+                </button>
+
+            </div>
 
         </div>
 
     </div>
 
+    <!-- Footer -->
+    <div class="text-center text-gray-500 mt-10">
+
+        Quant Trading Platform © 2026
+
+    </div>
+
 </div>
 
-<script src="/static/app.js"></script>
+<script src="app.js"></script>
 
 </body>
+
 </html>
