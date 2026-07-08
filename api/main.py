@@ -79,6 +79,19 @@ def dashboard_index():
     return FileResponse(index_path)
 
 
+@app.get("/style.css")
+def style():
+    return FileResponse(DASHBOARD_DIR / "style.css")
+
+
+@app.get("/app.js")
+def javascript():
+    return FileResponse(DASHBOARD_DIR / "app.js")
+    app.mount(
+        "/dashboard",
+        StaticFiles(directory=str(DASHBOARD_DIR)),
+        name="dashboard",
+    )
 if DASHBOARD_DIR.exists():
     app.mount(
         "/dashboard",
