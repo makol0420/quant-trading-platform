@@ -1,0 +1,56 @@
+# Quant Bot Platform -- configuration
+#
+# This file is the intended single source of truth for symbols, model
+# hyperparameters, and risk limits. The bundled scripts (scripts/*.py)
+# currently read most of these as constants at the top of each script for
+# clarity while you're getting oriented -- wire them up to load from here
+# via PyYAML once you're past the demo stage and want one place to tune
+# things. See scripts/generate_sample_data.py for the pattern.
+
+mode: paper  # backtest | paper | live
+
+symbols:
+  crypto:
+    - "BTC/USDT"
+    - "ETH/USDT"
+  forex:
+    - "EUR/USD"
+    - "GBP/USD"
+
+timeframe: "5m"
+
+data_provider:
+  crypto:
+    type: synthetic     # synthetic | ccxt
+    exchange_id: binance # used when type: ccxt
+  forex:
+    type: synthetic     # synthetic | oanda
+    practice: true        # used when type: oanda
+
+model:
+  horizon_bars: 12          # predict forward return over this many bars
+  cost_threshold_bps: 30    # ROUND-TRIP cost: label only fires if move exceeds entry+exit fees+slippage combined
+  n_folds: 5                # walk-forward folds
+  min_train_bars: 500
+
+strategy:
+  long_threshold: 0.58
+  short_threshold: 0.42
+
+risk:
+  risk_per_trade_pct: 0.5
+  stop_loss_atr_mult: 2.0
+  take_profit_atr_mult: 3.5
+  max_position_pct: 20
+  max_total_exposure_pct: 60
+  max_daily_loss_pct: 3
+  max_drawdown_pct: 15
+
+backtest:
+  starting_equity: 100000
+  fee_bps: 10       # per-side trading fee, basis points
+  slippage_bps: 5    # adverse price adjustment applied to every fill
+
+orchestrator:
+  poll_seconds: 60      # real deployments: match your timeframe (e.g. 300 for 5m bars)
+  lookback_bars: 150

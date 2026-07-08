@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Secrets -- never commit real credentials
+.env
+
+# Regenerable data & model artifacts (see README Quickstart to regenerate)
+data/_cache/*
+!data/_cache/.gitkeep
+models/registry/*
+!models/registry/.gitkeep
+results/backtest_results.json
+results/training_summary.json
+results/oof_predictions/*
+!results/oof_predictions/.gitkeep
+runtime_state/*
+!runtime_state/.gitkeep
+
+# OS cruft
+.DS_Store

@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Quant Platform — Backtest Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B0E14;
+    --panel: #131824;
+    --panel-2: #171D2B;
+    --border: #232B3B;
+    --amber: #D4A24C;
+    --amber-dim: #8A6B33;
+    --cyan: #5EC8D8;
+    --cyan-dim: #366E78;
+    --green: #3FBF7F;
+    --red: #E5484D;
+    --text: #E8E6E1;
+    --text-muted: #8A8F98;
+    --text-faint: #565B66;
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 20px;
+  }
+
+  .wrap { max-width: 1280px; margin: 0 auto; }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark {
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .brand h1 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: 0.02em; }
+  .brand p { margin: 2px 0 0; font-size: 12px; color: var(--text-muted); }
+  .header-right { text-align: right; }
+  .generated { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); margin-bottom: 6px; }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+    padding: 4px 10px; border-radius: 3px; letter-spacing: 0.03em;
+  }
+  .status-pill.halted { background: rgba(229,72,77,0.12); color: var(--red); border: 1px solid rgba(229,72,77,0.35); }
+  .status-pill.active { background: rgba(63,191,127,0.12); color: var(--green); border: 1px solid rgba(63,191,127,0.35); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+  /* ---------- disclaimer strip ---------- */
+  .disclaimer {
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
+    background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+    padding: 8px 12px; margin-bottom: 20px;
+  }
+  .disclaimer b { color: var(--text-muted); }
+
+  .halt-note {
+    font-family: var(--font-mono); font-size: 12px; color: var(--red);
+    background: rgba(229,72,77,0.08); border: 1px solid rgba(229,72,77,0.25); border-radius: 4px;
+    padding: 10px 12px; margin-bottom: 20px;
+  }
+
+  /* ---------- section headings ---------- */
+  .section-title {
+    font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-muted); margin: 28px 0 10px;
+  }
+  .section-desc { font-size: 12.5px; color: var(--text-muted); margin: -4px 0 14px; max-width: 780px; }
+
+  /* ---------- metric cards ---------- */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+    gap: 10px;
+  }
+  .metric-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .metric-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+  .metric-value { font-family: var(--font-mono); font-size: 21px; font-weight: 600; margin-top: 4px; }
+  .metric-value.pos { color: var(--green); }
+  .metric-value.neg { color: var(--red); }
+  .metric-value.neutral { color: var(--text); }
+  .metric-sub { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); margin-top: 2px; }
+
+  /* ---------- panels row ---------- */
+  .panels-row { display: grid; grid-template-columns: 2.1fr 1fr; gap: 14px; margin-top: 14px; }
+  @media (max-width: 860px) { .panels-row { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+  .panel-title { font-size: 12px; font-weight: 600; color: var(--text-muted); margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* ---------- drawdown gauge ---------- */
+  .gauge-value { font-family: var(--font-mono); font-size: 30px; font-weight: 600; color: var(--red); }
+  .gauge-track { background: #0D1119; border: 1px solid var(--border); border-radius: 4px; height: 10px; margin: 12px 0 8px; overflow: hidden; }
+  .gauge-fill { height: 100%; background: linear-gradient(90deg, var(--amber), var(--red)); }
+  .gauge-caption { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+  .gauge-note { font-size: 12px; color: var(--text-muted); margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+  /* ---------- walk-forward timeline ---------- */
+  .wf-symbol-row { margin-bottom: 18px; }
+  .wf-symbol-label { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+  .wf-track { position: relative; height: 22px; background: #0D1119; border-radius: 3px; }
+  .wf-seg { position: absolute; top: 0; height: 100%; border-radius: 2px; }
+  .wf-train { background: var(--amber-dim); }
+  .wf-test { background: var(--cyan); }
+  .wf-test-label {
+    position: absolute; top: -18px; font-family: var(--font-mono); font-size: 10px; color: var(--cyan);
+    white-space: nowrap;
+  }
+  .wf-legend { display: flex; gap: 18px; margin-top: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); }
+  .wf-legend-item { display: flex; align-items: center; gap: 6px; }
+  .wf-swatch { width: 10px; height: 10px; border-radius: 2px; }
+
+  /* ---------- per-symbol table ---------- */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-faint); font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 7px 10px; font-family: var(--font-mono); font-size: 12.5px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  .side-buy { color: var(--green); }
+  .side-sell { color: var(--red); }
+  .mono-muted { color: var(--text-faint); }
+  .auc-bar-track { display: inline-block; width: 60px; height: 6px; background: #0D1119; border-radius: 3px; vertical-align: middle; margin-right: 8px; overflow: hidden; }
+  .auc-bar-fill { height: 100%; background: var(--cyan); }
+
+  .table-scroll { max-height: 420px; overflow-y: auto; }
+
+  footer {
+    margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border);
+    font-size: 11.5px; color: var(--text-faint); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="1" y="1" width="32" height="32" rx="6" stroke="#D4A24C" stroke-width="1.5"/>
+        <path d="M8 22 L13 14 L18 18 L26 8" stroke="#5EC8D8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        <circle cx="26" cy="8" r="2" fill="#5EC8D8"/>
+      </svg>
+      <div>
+        <h1>QUANT PLATFORM</h1>
+        <p>Walk-forward backtest report — synthetic data</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="generated" id="generated-ts"></div>
+      <span class="status-pill" id="status-pill"></span>
+    </div>
+  </header>
+
+  <div class="disclaimer">
+    <b>Synthetic data.</b> This run was generated in a sandbox with no route to a live exchange or broker — prices are a regime-switching simulation, not a real market. Methodology (walk-forward validation, cost-aware labeling, fees + slippage) is real; the numbers below describe how this strategy behaved on simulated history, nothing more. Not financial advice.
+  </div>
+
+  <div class="halt-note" id="halt-note" style="display:none;"></div>
+
+  <div class="section-title">Performance</div>
+  <div class="metrics-grid" id="metrics-grid"></div>
+
+  <div class="panels-row">
+    <div class="panel">
+      <div class="panel-title">Equity curve</div>
+      <canvas id="equity-chart" height="130"></canvas>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Drawdown vs. kill-switch limit</div>
+      <div class="gauge-value" id="gauge-value">—</div>
+      <div class="gauge-track"><div class="gauge-fill" id="gauge-fill" style="width:0%"></div></div>
+      <div class="gauge-caption" id="gauge-caption"></div>
+      <div class="gauge-note">Trading halts automatically past this drawdown and stays halted until a human resets it — a breach isn't a bug, it's the safety system doing its job.</div>
+    </div>
+  </div>
+
+  <div class="section-title">Walk-forward validation</div>
+  <div class="section-desc">Each row is one symbol's model, retrained from scratch across 5 sequential folds. The amber bar is the training window (expanding each fold), the cyan bar is the out-of-fold test window that produced the backtest signal for that period — with a small embargo gap between them so no label leaks across the boundary. AUC is measured only on that cyan test segment, by a model that never saw it during training.</div>
+  <div class="panel" id="wf-panel"></div>
+
+  <div class="section-title">Per-symbol summary</div>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Symbol</th><th>Walk-forward AUC</th><th>Trades</th></tr></thead>
+      <tbody id="per-symbol-body"></tbody>
+    </table>
+  </div>
+
+  <div class="section-title">Recent trades</div>
+  <div class="panel table-scroll">
+    <table>
+      <thead><tr><th>Timestamp (UTC)</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Fee</th><th>Signal</th></tr></thead>
+      <tbody id="trades-body"></tbody>
+    </table>
+  </div>
+
+  <footer>
+    <span>Reference implementation — see README.md for how to point this at real crypto/forex data and go from backtest → paper → live.</span>
+    <span>Not financial advice.</span>
+  </footer>
+
+</div>
+
+<script>
+const REPORT_DATA = /*__REPORT_DATA__*/{};
+
+function fmtPct(v, digits=2) { return (v > 0 ? '+' : '') + v.toFixed(digits) + '%'; }
+function fmtNum(v, digits=2) { return v.toFixed(digits); }
+function signClass(v) { return v > 0 ? 'pos' : (v < 0 ? 'neg' : 'neutral'); }
+
+// Native canvas line chart -- deliberately dependency-free rather than
+// pulling in a charting library over CDN. A report whose main visual
+// goes blank if one external script fails to load isn't trustworthy;
+// this has no such single point of failure.
+function drawLineChart(canvas, points) {
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = canvas.clientWidth || canvas.parentElement.clientWidth;
+  const cssHeight = parseInt(canvas.getAttribute('height'), 10) || 130;
+  canvas.width = cssWidth * dpr;
+  canvas.height = cssHeight * dpr;
+  canvas.style.width = cssWidth + 'px';
+  canvas.style.height = cssHeight + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const padding = { top: 10, right: 14, bottom: 22, left: 64 };
+  const plotW = cssWidth - padding.left - padding.right;
+  const plotH = cssHeight - padding.top - padding.bottom;
+
+  const values = points.map(p => p.value);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = (maxV - minV) || Math.max(1, Math.abs(minV) * 0.01);
+
+  const xAt = i => padding.left + (points.length > 1 ? (i / (points.length - 1)) * plotW : 0);
+  const yAt = v => padding.top + plotH - ((v - minV) / range) * plotH;
+
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  ctx.strokeStyle = '#1A2130';
+  ctx.fillStyle = '#565B66';
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  ctx.lineWidth = 1;
+  const nLines = 4;
+  for (let i = 0; i <= nLines; i++) {
+    const v = minV + (range * i / nLines);
+    const yy = yAt(v);
+    ctx.beginPath();
+    ctx.moveTo(padding.left, yy);
+    ctx.lineTo(cssWidth - padding.right, yy);
+    ctx.stroke();
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('$' + Math.round(v).toLocaleString(), padding.left - 8, yy);
+  }
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  [0, Math.floor((points.length - 1) / 2), points.length - 1].forEach(i => {
+    if (points[i]) ctx.fillText(points[i].label, xAt(i), cssHeight - padding.bottom + 6);
+  });
+
+  ctx.beginPath();
+  ctx.moveTo(xAt(0), yAt(points[0].value));
+  points.forEach((p, i) => ctx.lineTo(xAt(i), yAt(p.value)));
+  ctx.lineTo(xAt(points.length - 1), padding.top + plotH);
+  ctx.lineTo(xAt(0), padding.top + plotH);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, padding.top, 0, padding.top + plotH);
+  grad.addColorStop(0, 'rgba(94,200,216,0.20)');
+  grad.addColorStop(1, 'rgba(94,200,216,0.0)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const px = xAt(i), py = yAt(p.value);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  });
+  ctx.strokeStyle = '#5EC8D8';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+function render() {
+  const d = REPORT_DATA;
+  const perf = d.performance;
+
+  document.getElementById('generated-ts').textContent = 'generated ' + d.generated_at.slice(0, 19).replace('T', ' ') + ' UTC';
+
+  const pill = document.getElementById('status-pill');
+  if (d.status === 'HALTED') {
+    pill.className = 'status-pill halted';
+    pill.innerHTML = '<span class="status-dot"></span> HALTED';
+  } else {
+    pill.className = 'status-pill active';
+    pill.innerHTML = '<span class="status-dot"></span> ACTIVE';
+  }
+
+  if (d.status === 'HALTED' && d.halt_timestamp) {
+    const note = document.getElementById('halt-note');
+    note.style.display = 'block';
+    note.textContent = 'Max drawdown kill-switch triggered at ' + d.halt_timestamp.slice(0,19).replace('T',' ') + ' UTC — trading halted for the remainder of this backtest, exactly as configured.';
+  }
+
+  // Each section below is independent and wrapped in its own try/catch:
+  // a bug in one (or, previously, an external script failing to load)
+  // should never cascade into blanking out sections that don't depend
+  // on it -- that failure mode is exactly what an earlier version of
+  // this file had with a CDN-hosted charting library, and it's the kind
+  // of fragility a "trustworthy dashboard" specifically shouldn't have.
+
+  try {
+    const cards = [
+      { label: 'Total Return', value: fmtPct(perf.total_return_pct), cls: signClass(perf.total_return_pct) },
+      { label: 'CAGR', value: fmtPct(perf.cagr_pct), cls: signClass(perf.cagr_pct), sub: 'annualized, thin sample' },
+      { label: 'Sharpe', value: fmtNum(perf.sharpe), cls: signClass(perf.sharpe), sub: 'daily-resampled' },
+      { label: 'Sortino', value: fmtNum(perf.sortino), cls: signClass(perf.sortino), sub: 'daily-resampled' },
+      { label: 'Max Drawdown', value: '-' + fmtNum(perf.max_drawdown_pct) + '%', cls: 'neg' },
+      { label: 'Win Rate', value: fmtNum(perf.win_rate_pct, 1) + '%', cls: 'neutral' },
+      { label: 'Profit Factor', value: fmtNum(perf.profit_factor), cls: perf.profit_factor >= 1 ? 'pos' : 'neg' },
+      { label: 'Trades', value: String(perf.num_trades), cls: 'neutral', sub: perf.n_days_observed + ' days observed' },
+    ];
+    document.getElementById('metrics-grid').innerHTML = cards.map(c => `
+      <div class="metric-card">
+        <div class="metric-label">${c.label}</div>
+        <div class="metric-value ${c.cls}">${c.value}</div>
+        ${c.sub ? `<div class="metric-sub">${c.sub}</div>` : ''}
+      </div>
+    `).join('');
+  } catch (e) { console.error('metrics section failed:', e); }
+
+  try {
+    const killSwitchPct = 15;
+    const ddPct = perf.max_drawdown_pct;
+    document.getElementById('gauge-value').textContent = '-' + fmtNum(ddPct) + '%';
+    document.getElementById('gauge-fill').style.width = Math.min(100, (ddPct / killSwitchPct) * 100) + '%';
+    document.getElementById('gauge-caption').textContent = `max drawdown reached vs. ${killSwitchPct}% kill-switch limit`;
+  } catch (e) { console.error('gauge section failed:', e); }
+
+  try {
+    const points = d.equity_curve.map(r => ({
+      label: r.timestamp.slice(5, 16).replace('T', ' '),
+      value: r.equity,
+    }));
+    drawLineChart(document.getElementById('equity-chart'), points);
+    window.addEventListener('resize', () => drawLineChart(document.getElementById('equity-chart'), points));
+  } catch (e) { console.error('equity chart failed:', e); }
+
+  try {
+    const wfPanel = document.getElementById('wf-panel');
+    wfPanel.innerHTML = d.symbols.map(sym => {
+      const folds = d.folds_by_symbol[sym] || [];
+      // Render ALL train bars first, then ALL test bars after. Folds are
+      // anchored/expanding, so fold 5's train bar spans nearly the whole
+      // timeline and, painted after fold 1's test bar in fold order,
+      // would otherwise cover it completely -- only the last fold's test
+      // segment would ever be visible. Painting every train bar before
+      // any test bar guarantees every test segment stays on top
+      // regardless of which fold it belongs to.
+      const trainDivs = folds.map(f => `
+        <div class="wf-seg wf-train" style="left:${f.train_frac_start*100}%; width:${f.train_frac_width*100}%;"></div>
+      `).join('');
+      const testDivs = folds.map(f => {
+        const labelOnRight = f.test_frac_start * 100 > 65;
+        return `
+          <div class="wf-seg wf-test" style="left:${f.test_frac_start*100}%; width:${f.test_frac_width*100}%;">
+            <span class="wf-test-label" style="${labelOnRight ? 'right:0' : 'left:0'};">fold ${f.fold_number}: AUC ${f.auc.toFixed(3)}</span>
+          </div>
+        `;
+      }).join('');
+      return `
+        <div class="wf-symbol-row">
+          <div class="wf-symbol-label">${sym}</div>
+          <div class="wf-track">${trainDivs}${testDivs}</div>
+        </div>
+      `;
+    }).join('') + `
+      <div class="wf-legend">
+        <div class="wf-legend-item"><span class="wf-swatch" style="background:var(--amber-dim)"></span> training window (expanding)</div>
+        <div class="wf-legend-item"><span class="wf-swatch" style="background:var(--cyan)"></span> out-of-fold test window</div>
+      </div>
+    `;
+  } catch (e) { console.error('walk-forward section failed:', e); }
+
+  try {
+    const maxAuc = Math.max(...d.symbols.map(s => d.per_symbol[s].auc || 0.5), 0.6);
+    document.getElementById('per-symbol-body').innerHTML = d.symbols.map(sym => {
+      const info = d.per_symbol[sym];
+      const auc = info.auc || 0;
+      const barWidth = Math.max(0, Math.min(100, ((auc - 0.45) / (maxAuc - 0.45)) * 100));
+      return `
+        <tr>
+          <td>${sym}</td>
+          <td><span class="auc-bar-track"><span class="auc-bar-fill" style="width:${barWidth}%"></span></span>${auc.toFixed(3)}</td>
+          <td>${info.num_trades}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (e) { console.error('per-symbol section failed:', e); }
+
+  try {
+    document.getElementById('trades-body').innerHTML = d.trades.slice().reverse().map(t => `
+      <tr>
+        <td class="mono-muted">${t.timestamp.slice(0,19).replace('T',' ')}</td>
+        <td>${t.symbol}</td>
+        <td class="side-${t.side}">${t.side.toUpperCase()}</td>
+        <td>${t.qty}</td>
+        <td>${t.price}</td>
+        <td class="mono-muted">${t.fee}</td>
+        <td class="mono-muted">${t.reason}</td>
+      </tr>
+    `).join('');
+  } catch (e) { console.error('trades section failed:', e); }
+}
+
+render();
+</script>
+</body>
+</html>
