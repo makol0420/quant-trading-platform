@@ -93,6 +93,10 @@ def javascript():
         StaticFiles(directory=str(DASHBOARD_DIR)),
         name="dashboard",
     )
+@app.get("/layout.js")
+def layout_js():
+    return FileResponse(DASHBOARD_DIR / "layout.js")
+
 if DASHBOARD_DIR.exists():
     app.mount(
         "/dashboard",
