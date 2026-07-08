@@ -5,7 +5,7 @@ import json
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE_DIR = Path(__file__).parent.parent
@@ -22,6 +22,33 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/deposit", response_class=HTMLResponse)
+def deposit():
+    return """
+    <h1>Deposit Funds</h1>
+    <p>Coming soon...</p>
+    <a href="/">← Dashboard</a>
+    """
+
+
+@app.get("/withdraw", response_class=HTMLResponse)
+def withdraw():
+    return """
+    <h1>Withdraw Funds</h1>
+    <p>Coming soon...</p>
+    <a href="/">← Dashboard</a>
+    """
+
+
+@app.get("/transactions", response_class=HTMLResponse)
+def transactions():
+    return """
+    <h1>Transaction History</h1>
+    <p>No transactions yet.</p>
+    <a href="/">← Dashboard</a>
+    """
 
 
 @app.get("/api/state/{mode}")
