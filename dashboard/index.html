@@ -8,172 +8,149 @@
 
 <title>Quant Trading Platform</title>
 
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="/style.css">
 
-<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 </head>
 
-<body class="bg-gray-950 text-white">
+<body>
 
-<div class="container mx-auto p-6">
+<div class="app">
 
-    <!-- Header -->
-    <div class="flex justify-between items-center mb-8">
+    <!-- Sidebar -->
+    <aside class="sidebar">
 
-        <div>
-
-            <h1 class="text-4xl font-bold">
-                Quant Trading Platform
-            </h1>
-
-            <p class="text-gray-400">
-                AI Powered Quantitative Trading Dashboard
-            </p>
-
+        <div class="logo">
+            <h2>📈 Quant Platform</h2>
+            <p>AI Trading Suite</p>
         </div>
 
-        <div class="bg-green-600 px-5 py-2 rounded-lg font-bold">
-            🟢 LIVE
-        </div>
+        <nav>
 
-    </div>
+            <a href="#" class="active">🏠 Dashboard</a>
 
-    <!-- Dashboard Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-3 gap-5">
+            <a href="#">💼 Portfolio</a>
 
-        <div class="card">
-            <h2>Portfolio</h2>
-            <p id="portfolio">$0</p>
-        </div>
+            <a href="#">📊 Markets</a>
 
-        <div class="card">
-            <h2>Cash</h2>
-            <p id="cash">$0</p>
-        </div>
+            <a href="#">🤖 Strategies</a>
 
-        <div class="card">
-            <h2>Daily P/L</h2>
-            <p id="pnl">$0</p>
-        </div>
+            <a href="#">📝 Paper Trading</a>
 
-        <div class="card">
-            <h2>Open Trades</h2>
-            <p id="trades">0</p>
-        </div>
+            <a href="#">💹 Live Trading</a>
 
-        <div class="card">
-            <h2>Win Rate</h2>
-            <p id="winrate">0%</p>
-        </div>
+            <a href="#">📈 Backtesting</a>
 
-        <div class="card">
-            <h2>Status</h2>
-            <p class="text-green-400">Running</p>
-        </div>
+            <a href="#">🧠 AI Models</a>
 
-    </div>
+            <a href="#">📑 Reports</a>
 
-    <!-- Equity Chart -->
-    <div class="bg-gray-900 rounded-xl p-6 mt-8 shadow-lg">
+            <a href="#">💳 Transactions</a>
 
-        <h2 class="text-2xl font-bold mb-4">
-            Portfolio Equity
-        </h2>
+            <a href="#">⚙ Settings</a>
 
-        <canvas id="equityChart"></canvas>
+            <a href="#">📜 Logs</a>
 
-    </div>
+        </nav>
 
-    <!-- Open Positions -->
-    <div class="bg-gray-900 rounded-xl p-6 mt-8 shadow-lg">
+    </aside>
 
-        <h2 class="text-2xl font-bold mb-4">
-            Open Positions
-        </h2>
+    <!-- Main -->
 
-        <table class="w-full">
+    <main class="main">
 
-            <thead>
+        <!-- Top Bar -->
 
-                <tr>
+        <header class="topbar">
 
-                    <th>Symbol</th>
-                    <th>Side</th>
-                    <th>Entry</th>
-                    <th>Current</th>
-                    <th>P/L</th>
+            <h2>Dashboard</h2>
 
-                </tr>
+            <div class="topbar-right">
 
-            </thead>
+                <span class="status">🟢 Paper Trading</span>
 
-            <tbody id="positions">
+                <button class="icon-btn">🔔</button>
 
-            </tbody>
+                <button class="icon-btn">⚙️</button>
 
-        </table>
-
-    </div>
-
-    <!-- Bottom Section -->
-    <div class="grid md:grid-cols-2 gap-6 mt-8">
-
-        <!-- Trading Status -->
-        <div class="bg-gray-900 rounded-xl p-6 shadow-lg">
-
-            <h2 class="text-2xl font-bold mb-4">
-                Trading Status
-            </h2>
-
-            <pre id="status" class="overflow-auto text-green-300">
-Loading...
-            </pre>
-
-        </div>
-
-        <!-- Controls -->
-        <div class="bg-gray-900 rounded-xl p-6 shadow-lg">
-
-            <h2 class="text-2xl font-bold mb-6">
-                Bot Controls
-            </h2>
-
-            <div class="space-y-4">
-
-                <button class="w-full bg-green-600 hover:bg-green-700 py-3 rounded-lg font-bold">
-                    ▶ Start Paper Trading
-                </button>
-
-                <button class="w-full bg-red-600 hover:bg-red-700 py-3 rounded-lg font-bold">
-                    ■ Stop Bot
-                </button>
-
-                <button class="w-full bg-blue-600 hover:bg-blue-700 py-3 rounded-lg font-bold">
-                    📊 Run Backtest
-                </button>
-
-                <button class="w-full bg-purple-600 hover:bg-purple-700 py-3 rounded-lg font-bold">
-                    📄 Generate Report
-                </button>
+                <div class="user">
+                    👤 Admin
+                </div>
 
             </div>
 
-        </div>
+        </header>
 
-    </div>
+        <!-- Content -->
 
-    <!-- Footer -->
-    <div class="text-center text-gray-500 mt-10">
+        <section class="content">
 
-        Quant Trading Platform © 2026
+            <div class="cards">
 
-    </div>
+                <div class="card">
+                    <h3>Portfolio</h3>
+                    <p id="portfolio">$10,000</p>
+                </div>
+
+                <div class="card">
+                    <h3>Daily P/L</h3>
+                    <p id="pnl">$125</p>
+                </div>
+
+                <div class="card">
+                    <h3>Open Trades</h3>
+                    <p id="trades">2</p>
+                </div>
+
+                <div class="card">
+                    <h3>Win Rate</h3>
+                    <p id="winrate">71%</p>
+                </div>
+
+            </div>
+
+            <div class="chart-card">
+
+                <h3>Portfolio Equity</h3>
+
+                <canvas id="equityChart"></canvas>
+
+            </div>
+
+            <div class="bottom-grid">
+
+                <div class="panel">
+
+                    <h3>Trading Status</h3>
+
+                    <pre id="status">Loading...</pre>
+
+                </div>
+
+                <div class="panel">
+
+                    <h3>Quick Actions</h3>
+
+                    <button class="action green">
+                        ▶ Start Bot
+                    </button>
+
+                    <button class="action red">
+                        ■ Stop Bot
+                    </button>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
 
 </div>
 
-<script src="app.js"></script>
+<script src="/app.js"></script>
 
 </body>
 
