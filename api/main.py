@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE_DIR = Path(__file__).parent.parent
+PAGES_DIR = BASE_DIR / "pages"
 STATE_DIR = BASE_DIR / "runtime_state"
 RESULTS_DIR = BASE_DIR / "results"
 DASHBOARD_DIR = BASE_DIR / "dashboard"
@@ -97,4 +98,10 @@ if DASHBOARD_DIR.exists():
         "/dashboard",
         StaticFiles(directory=str(DASHBOARD_DIR)),
         name="dashboard",
+    )
+if PAGES_DIR.exists():
+    app.mount(
+        "/pages",
+        StaticFiles(directory=str(PAGES_DIR)),
+        name="pages",
     )

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        body{
+            background:#0f172a;
+            color:white;
+            font-family:Arial,Helvetica,sans-serif;
+        }
+
+        .card{
+            background:#1e293b;
+            border-radius:14px;
+            padding:20px;
+            margin-bottom:20px;
+        }
+
+        table{
+            width:100%;
+        }
+
+        th{
+            text-align:left;
+            color:#94a3b8;
+            padding-bottom:12px;
+        }
+
+        td{
+            padding:12px 0;
+            border-top:1px solid #334155;
+        }
+
+        .green{
+            color:#22c55e;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="max-w-7xl mx-auto p-8">
+
+    <h1 class="text-4xl font-bold mb-8">
+        Portfolio Overview
+    </h1>
+
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+
+        <div class="card">
+            <p>Total Equity</p>
+            <h2 class="text-4xl font-bold">$10,000</h2>
+        </div>
+
+        <div class="card">
+            <p>Available Cash</p>
+            <h2 class="text-4xl font-bold">$8,500</h2>
+        </div>
+
+        <div class="card">
+            <p>Total Profit</p>
+            <h2 class="text-4xl font-bold green">$1,250</h2>
+        </div>
+
+        <div class="card">
+            <p>ROI</p>
+            <h2 class="text-4xl font-bold green">12.5%</h2>
+        </div>
+
+    </div>
+
+    <div class="card mt-8">
+
+        <h2 class="text-2xl font-bold mb-4">
+            Recent Transactions
+        </h2>
+
+        <table>
+
+            <thead>
+
+            <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Status</th>
+            </tr>
+
+            </thead>
+
+            <tbody>
+
+            <tr>
+                <td>08 Jul 2026</td>
+                <td>Deposit</td>
+                <td>$2,000</td>
+                <td class="green">Completed</td>
+            </tr>
+
+            <tr>
+                <td>05 Jul 2026</td>
+                <td>Withdrawal</td>
+                <td>$500</td>
+                <td class="green">Completed</td>
+            </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</div>
+
+</body>
+</html>
