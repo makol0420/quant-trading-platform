@@ -1,55 +1,78 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Deposit Funds</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deposit Funds</title>
 
-<script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
-<body class="bg-slate-900 text-white">
+<body class="bg-gray-950 text-white">
 
-<div class="max-w-3xl mx-auto p-8">
+<div class="max-w-4xl mx-auto p-8">
 
-<h1 class="text-4xl font-bold mb-8">
-Deposit Funds
-</h1>
+    <h1 class="text-4xl font-bold mb-8">
+        Deposit Funds
+    </h1>
 
-<div class="bg-slate-800 rounded-xl p-8">
+    <div class="bg-gray-900 rounded-xl p-6">
 
-<label class="block mb-2">
-Amount
-</label>
+        <label class="block mb-2 text-gray-400">
+            Amount (USD)
+        </label>
 
-<input
-type="number"
-placeholder="1000"
-class="w-full p-3 rounded text-black mb-6">
+        <input
+            id="amount"
+            type="number"
+            placeholder="1000"
+            class="w-full p-3 rounded bg-gray-800 mb-6"
+        >
 
-<label class="block mb-2">
-Payment Method
-</label>
+        <label class="block mb-2 text-gray-400">
+            Payment Method
+        </label>
 
-<select
-class="w-full p-3 rounded text-black mb-6">
+        <select
+            id="method"
+            class="w-full p-3 rounded bg-gray-800 mb-6"
+        >
+            <option>Bank Transfer</option>
+            <option>Visa</option>
+            <option>MasterCard</option>
+            <option>Crypto Wallet</option>
+        </select>
 
-<option>Bank Transfer</option>
-<option>Visa</option>
-<option>Mastercard</option>
-<option>Crypto Wallet</option>
-<option>Mpesa</option>
+        <button
+            onclick="depositFunds()"
+            class="bg-green-600 px-6 py-3 rounded-lg hover:bg-green-700"
+        >
+            Deposit
+        </button>
 
-</select>
+        <p id="result" class="mt-6 text-green-400"></p>
 
-<button
-class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg">
-Deposit
-</button>
+    </div>
+
+    <a href="/" class="inline-block mt-8 text-blue-400">
+        ← Back to Dashboard
+    </a>
 
 </div>
 
-</div>
+<script>
+
+async function depositFunds(){
+
+    const amount=document.getElementById("amount").value;
+    const method=document.getElementById("method").value;
+
+    document.getElementById("result").innerHTML=
+        `Demo deposit of <b>$${amount}</b> via ${method} successful.`;
+
+}
+
+</script>
 
 </body>
 </html>

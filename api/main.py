@@ -24,31 +24,19 @@ app.add_middleware(
 )
 
 
-@app.get("/deposit", response_class=HTMLResponse)
+@app.get("/deposit")
 def deposit():
-    return """
-    <h1>Deposit Funds</h1>
-    <p>Coming soon...</p>
-    <a href="/">← Dashboard</a>
-    """
+    return FileResponse(PAGES_DIR / "deposit.html")
 
 
-@app.get("/withdraw", response_class=HTMLResponse)
+@app.get("/withdraw")
 def withdraw():
-    return """
-    <h1>Withdraw Funds</h1>
-    <p>Coming soon...</p>
-    <a href="/">← Dashboard</a>
-    """
+    return FileResponse(PAGES_DIR / "withdraw.html")
 
 
-@app.get("/transactions", response_class=HTMLResponse)
+@app.get("/transactions")
 def transactions():
-    return """
-    <h1>Transaction History</h1>
-    <p>No transactions yet.</p>
-    <a href="/">← Dashboard</a>
-    """
+    return FileResponse(PAGES_DIR / "transactions.html")
 
 
 @app.get("/api/state/{mode}")

@@ -1,18 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>Transactions</title>
+<title>Transaction History</title>
 
 <script src="https://cdn.tailwindcss.com"></script>
-
 </head>
 
-<body class="bg-slate-900 text-white">
+<body class="bg-gray-950 text-white">
 
 <div class="max-w-6xl mx-auto p-8">
 
@@ -20,18 +16,19 @@
 Transaction History
 </h1>
 
-<div class="bg-slate-800 rounded-xl p-6">
+<table class="w-full bg-gray-900 rounded-xl overflow-hidden">
 
-<table class="w-full">
+<thead class="bg-gray-800">
 
-<thead>
+<tr>
 
-<tr class="text-slate-400 border-b border-slate-700">
+<th class="p-4">Date</th>
 
-<th class="text-left py-3">Date</th>
-<th class="text-left">Type</th>
-<th class="text-left">Amount</th>
-<th class="text-left">Status</th>
+<th class="p-4">Type</th>
+
+<th class="p-4">Amount</th>
+
+<th class="p-4">Status</th>
 
 </tr>
 
@@ -39,21 +36,27 @@ Transaction History
 
 <tbody>
 
-<tr class="border-b border-slate-700">
+<tr>
 
-<td class="py-4">08 Jul 2026</td>
-<td>Deposit</td>
-<td>$2,000</td>
-<td class="text-green-400">Completed</td>
+<td class="p-4">2026-07-08</td>
+
+<td class="p-4">Deposit</td>
+
+<td class="p-4">$2,000</td>
+
+<td class="p-4 text-green-400">Completed</td>
 
 </tr>
 
 <tr>
 
-<td class="py-4">05 Jul 2026</td>
-<td>Withdrawal</td>
-<td>$500</td>
-<td class="text-green-400">Completed</td>
+<td class="p-4">2026-07-06</td>
+
+<td class="p-4">Withdrawal</td>
+
+<td class="p-4">$500</td>
+
+<td class="p-4 text-yellow-400">Pending</td>
 
 </tr>
 
@@ -61,10 +64,11 @@ Transaction History
 
 </table>
 
-</div>
+<a href="/" class="inline-block mt-8 text-blue-400">
+← Back to Dashboard
+</a>
 
 </div>
 
 </body>
-
 </html>
