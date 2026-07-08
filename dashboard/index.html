@@ -1,159 +1,107 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+
 <meta charset="UTF-8">
-<title>Quant Platform — Live Monitor</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg: #0B0E14; --panel: #131824; --border: #232B3B;
-    --amber: #D4A24C; --cyan: #5EC8D8; --green: #3FBF7F; --red: #E5484D;
-    --text: #E8E6E1; --text-muted: #8A8F98; --text-faint: #565B66;
-    --font-display: 'Space Grotesk', sans-serif; --font-mono: 'IBM Plex Mono', monospace;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-display); font-size: 14px; padding: 20px; }
-  .wrap { max-width: 1200px; margin: 0 auto; }
-  header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--border); margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
-  h1 { font-size: 17px; margin: 0; }
-  .mode-select { display: flex; gap: 6px; }
-  .mode-btn { font-family: var(--font-mono); font-size: 12px; padding: 5px 12px; border-radius: 4px; border: 1px solid var(--border); background: var(--panel); color: var(--text-muted); cursor: pointer; }
-  .mode-btn.active { color: var(--cyan); border-color: var(--cyan); }
-  .status-pill { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 3px; }
-  .status-pill.on { background: rgba(63,191,127,0.12); color: var(--green); border: 1px solid rgba(63,191,127,0.35); }
-  .status-pill.off { background: rgba(138,143,152,0.12); color: var(--text-muted); border: 1px solid var(--border); }
-  .status-pill.halted { background: rgba(229,72,77,0.12); color: var(--red); border: 1px solid rgba(229,72,77,0.35); }
-  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
-  .metric-card { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; }
-  .metric-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
-  .metric-value { font-family: var(--font-mono); font-size: 22px; font-weight: 600; margin-top: 4px; }
+<title>Quant Trading Platform</title>
 
-  .section-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 24px 0 10px; }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
-  table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-size: 10.5px; text-transform: uppercase; color: var(--text-faint); font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--border); }
-  td { padding: 7px 10px; font-family: var(--font-mono); font-size: 12.5px; border-bottom: 1px solid var(--border); }
-  tr:last-child td { border-bottom: none; }
-  .pos-long { color: var(--green); } .pos-short { color: var(--red); } .pos-flat { color: var(--text-faint); }
-  .side-buy { color: var(--green); } .side-sell { color: var(--red); }
-  .empty-state { color: var(--text-faint); font-family: var(--font-mono); font-size: 13px; padding: 20px; text-align: center; }
-</style>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<link rel="stylesheet" href="/static/style.css">
+
 </head>
-<body>
-<div class="wrap">
-  <header>
-    <h1>QUANT PLATFORM — Live Monitor</h1>
-    <div style="display:flex; align-items:center; gap:14px;">
-      <div class="mode-select">
-        <button class="mode-btn active" data-mode="paper">PAPER</button>
-        <button class="mode-btn" data-mode="live">LIVE</button>
-      </div>
-      <span class="status-pill off" id="status-pill"><span class="dot"></span> loading…</span>
+
+<body class="bg-gray-950 text-white">
+
+<div class="container mx-auto p-6">
+
+    <div class="flex justify-between items-center">
+
+        <div>
+            <h1 class="text-4xl font-bold">
+                Quant Trading Platform
+            </h1>
+
+            <p class="text-gray-400">
+                AI Powered Trading Dashboard
+            </p>
+        </div>
+
+        <div class="bg-green-600 px-4 py-2 rounded-lg">
+            LIVE
+        </div>
+
     </div>
-  </header>
 
-  <div class="metrics-grid" id="metrics-grid"></div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-5 mt-8">
 
-  <div class="section-title">Positions &amp; signals</div>
-  <div class="panel"><table>
-    <thead><tr><th>Symbol</th><th>Position</th><th>Latest price</th><th>Signal</th><th>Confidence</th></tr></thead>
-    <tbody id="positions-body"></tbody>
-  </table></div>
+        <div class="card">
+            <h2>Portfolio</h2>
+            <p id="portfolio">$0</p>
+        </div>
 
-  <div class="section-title">Recent fills</div>
-  <div class="panel"><table>
-    <thead><tr><th>Timestamp (UTC)</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead>
-    <tbody id="trades-body"></tbody>
-  </table></div>
+        <div class="card">
+            <h2>Daily P/L</h2>
+            <p id="pnl">$0</p>
+        </div>
+
+        <div class="card">
+            <h2>Open Trades</h2>
+            <p id="trades">0</p>
+        </div>
+
+        <div class="card">
+            <h2>Win Rate</h2>
+            <p id="winrate">0%</p>
+        </div>
+
+    </div>
+
+    <div class="bg-gray-900 mt-8 rounded-xl p-6">
+
+        <canvas id="equityChart"></canvas>
+
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-6 mt-8">
+
+        <div class="bg-gray-900 rounded-xl p-6">
+
+            <h2 class="text-xl mb-4">
+                Trading Status
+            </h2>
+
+            <pre id="status">
+Loading...
+            </pre>
+
+        </div>
+
+        <div class="bg-gray-900 rounded-xl p-6">
+
+            <h2 class="text-xl mb-4">
+                Controls
+            </h2>
+
+            <button class="bg-green-600 px-5 py-3 rounded-lg">
+                Start Bot
+            </button>
+
+            <button class="bg-red-600 px-5 py-3 rounded-lg ml-3">
+                Stop Bot
+            </button>
+
+        </div>
+
+    </div>
+
 </div>
 
-<script>
-let currentMode = 'paper';
+<script src="/static/app.js"></script>
 
-document.querySelectorAll('.mode-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentMode = btn.dataset.mode;
-    poll();
-  });
-});
-
-function fmtMoney(v) { return '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
-
-async function poll() {
-  const pill = document.getElementById('status-pill');
-  try {
-    const res = await fetch(`/api/state/${currentMode}`);
-    const state = await res.json();
-
-    if (!state.running) {
-      pill.className = 'status-pill off';
-      pill.innerHTML = `<span class="dot"></span> no ${currentMode} session running`;
-      document.getElementById('metrics-grid').innerHTML = `<div class="empty-state">No ${currentMode} session has run yet. Start one with: python scripts/run_${currentMode}_trade.py</div>`;
-      document.getElementById('positions-body').innerHTML = '';
-      document.getElementById('trades-body').innerHTML = '';
-      return;
-    }
-
-    if (state.trading_halted) {
-      pill.className = 'status-pill halted';
-      pill.innerHTML = `<span class="dot"></span> HALTED — ${state.halt_reason || 'risk limit breached'}`;
-    } else {
-      pill.className = 'status-pill on';
-      pill.innerHTML = `<span class="dot"></span> ${currentMode} running`;
-    }
-
-    const cards = [
-      { label: 'Equity', value: fmtMoney(state.equity) },
-      { label: 'Peak Equity', value: fmtMoney(state.peak_equity) },
-      { label: 'Drawdown', value: state.drawdown_pct.toFixed(2) + '%' },
-      { label: 'Exposure', value: state.open_exposure_pct.toFixed(1) + '%' },
-    ];
-    document.getElementById('metrics-grid').innerHTML = cards.map(c => `
-      <div class="metric-card"><div class="metric-label">${c.label}</div><div class="metric-value">${c.value}</div></div>
-    `).join('');
-
-    const symbols = Object.keys(state.positions || {});
-    document.getElementById('positions-body').innerHTML = symbols.map(sym => {
-      const qty = state.positions[sym];
-      const posCls = qty > 0 ? 'pos-long' : (qty < 0 ? 'pos-short' : 'pos-flat');
-      const sig = (state.recent_signals || {})[sym] || {};
-      return `
-        <tr>
-          <td>${sym}</td>
-          <td class="${posCls}">${qty.toFixed(6)}</td>
-          <td>${state.latest_prices?.[sym] != null ? Number(state.latest_prices[sym]).toLocaleString() : '—'}</td>
-          <td>${sig.reason || '—'}</td>
-          <td>${sig.confidence != null ? (sig.confidence * 100).toFixed(1) + '%' : '—'}</td>
-        </tr>
-      `;
-    }).join('') || '<tr><td colspan="5" class="empty-state">No symbols configured</td></tr>';
-
-    const trades = (state.trade_log || []).slice().reverse().slice(0, 40);
-    document.getElementById('trades-body').innerHTML = trades.map(t => `
-      <tr>
-        <td>${(t.timestamp || '').slice(0,19).replace('T',' ')}</td>
-        <td>${t.symbol}</td>
-        <td class="side-${t.side}">${(t.side || '').toUpperCase()}</td>
-        <td>${Number(t.qty).toFixed(6)}</td>
-        <td>${Number(t.price).toLocaleString()}</td>
-        <td>${t.status}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="6" class="empty-state">No fills yet</td></tr>';
-
-  } catch (err) {
-    pill.className = 'status-pill off';
-    pill.innerHTML = '<span class="dot"></span> API unreachable — is uvicorn running?';
-    console.error(err);
-  }
-}
-
-poll();
-setInterval(poll, 5000);
-</script>
 </body>
 </html>

@@ -68,4 +68,4 @@ def dashboard_index():
 
 # Serve any other dashboard assets (css/js) if the dashboard grows beyond one file.
 if DASHBOARD_DIR.exists():
-    app.mount("/dashboard", StaticFiles(directory=str(DASHBOARD_DIR)), name="dashboard")
+    app.mount("/static", StaticFiles(directory=str(DASHBOARD_DIR)), name="static")
