@@ -19,6 +19,17 @@ def _cache_path(provider_name: str, symbol: str, timeframe: str) -> Path:
     return CACHE_DIR / f"{provider_name}_{safe_symbol}_{timeframe}.parquet"
 
 
+def cache_path(provider_name: str, symbol: str, timeframe: str) -> Path:
+    """
+    Where save_cache/load_cached will put this series.
+
+    Public so callers that need to test for a cached series' existence
+    (scripts/bootstrap.py deciding whether a fetch can be skipped) use the
+    same naming rule instead of re-deriving it and drifting out of sync.
+    """
+    return _cache_path(provider_name, symbol, timeframe)
+
+
 def load_cached(provider_name: str, symbol: str, timeframe: str) -> pd.DataFrame | None:
     path = _cache_path(provider_name, symbol, timeframe)
     if path.exists():

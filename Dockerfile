@@ -13,6 +13,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+RUN chmod +x start.sh
+
 EXPOSE 8000
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# start.sh builds the gitignored artifacts (cached OHLCV, models, backtest
+# results, report) in the background, then execs uvicorn. Running
+# `uvicorn api.main:app` directly still works, but the dashboard will have
+# nothing real to show -- see README "Deploying".
+CMD ["./start.sh"]

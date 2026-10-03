@@ -14,107 +14,63 @@
 
 </head>
 
-<body>
+<body data-title="Dashboard">
 
 <div class="app">
 
-    <!-- Sidebar -->
-    <aside class="sidebar">
-
-        <div class="logo">
-            <h2>📈 Quant Platform</h2>
-            <p>AI Trading Suite</p>
-        </div>
-
-        <nav>
-
-            <a href="#" class="active">🏠 Dashboard</a>
-
-            <a href="/pages/portfolio.html">💼 Portfolio</a>
-
-            <a href="#">📊 Markets</a>
-
-            <a href="#">🤖 Strategies</a>
-
-            <a href="#">📝 Paper Trading</a>
-
-            <a href="#">💹 Live Trading</a>
-
-            <a href="#">📈 Backtesting</a>
-
-            <a href="#">🧠 AI Models</a>
-
-            <a href="#">📑 Reports</a>
-
-            <a href="#">💳 Transactions</a>
-
-            <a href="#">⚙ Settings</a>
-
-            <a href="#">📜 Logs</a>
-
-        </nav>
-
-    </aside>
-
-    <!-- Main -->
+    <!-- Sidebar (injected by layout.js from components/sidebar.html) -->
+    <aside class="sidebar" id="sidebar"></aside>
 
     <main class="main">
 
-        <!-- Top Bar -->
-
-        <header class="topbar">
-
-            <h2>Dashboard</h2>
-
-            <div class="topbar-right">
-
-                <span class="status">🟢 Paper Trading</span>
-
-                <button class="icon-btn">🔔</button>
-
-                <button class="icon-btn">⚙️</button>
-
-                <div class="user">
-                    👤 Admin
-                </div>
-
-            </div>
-
-        </header>
-
-        <!-- Content -->
+        <!-- Topbar (injected by layout.js) -->
+        <header class="topbar" id="topbar"></header>
 
         <section class="content">
+
+            <h1 class="page-title">Overview</h1>
+            <p class="page-sub">
+                Paper trading against live market data. Prices are real; execution is simulated.
+            </p>
+
+            <div id="banner"></div>
 
             <div class="cards">
 
                 <div class="card">
                     <h3>Portfolio</h3>
-                    <p id="portfolio">$10,000</p>
+                    <p id="portfolio">—</p>
+                    <small id="portfolio-note">Loading…</small>
                 </div>
 
                 <div class="card">
-                    <h3>Daily P/L</h3>
-                    <p id="pnl">$125</p>
+                    <h3>Realized P/L</h3>
+                    <p id="pnl">—</p>
+                    <small id="pnl-note">Loading…</small>
                 </div>
 
                 <div class="card">
                     <h3>Open Trades</h3>
-                    <p id="trades">2</p>
+                    <p id="trades">—</p>
+                    <small id="trades-note">Loading…</small>
                 </div>
 
                 <div class="card">
                     <h3>Win Rate</h3>
-                    <p id="winrate">71%</p>
+                    <p id="winrate">—</p>
+                    <small id="winrate-note">Loading…</small>
                 </div>
 
             </div>
 
             <div class="chart-card">
 
-                <h3>Portfolio Equity</h3>
+                <h3 id="chart-title">Equity</h3>
+                <p class="muted" id="chart-note" style="margin-bottom:16px;font-size:13px;"></p>
 
-                <canvas id="equityChart"></canvas>
+                <div style="height:350px;">
+                    <canvas id="equityChart"></canvas>
+                </div>
 
             </div>
 
@@ -122,23 +78,32 @@
 
                 <div class="panel">
 
-                    <h3>Trading Status</h3>
+                    <h3>Open Positions</h3>
 
-                    <pre id="status">Loading...</pre>
+                    <div id="positions"><p class="spinner">Loading…</p></div>
 
                 </div>
 
                 <div class="panel">
 
-                    <h3>Quick Actions</h3>
+                    <h3>Trading Status</h3>
 
-                    <button class="action green">
-                        ▶ Start Bot
-                    </button>
+                    <pre id="status">Loading…</pre>
 
-                    <button class="action red">
-                        ■ Stop Bot
-                    </button>
+                    <h3 style="margin-top:22px;">Session Control</h3>
+
+                    <button class="action green" id="start-bot">▶ Start Paper Bot</button>
+
+                    <button class="action red" id="stop-bot">■ Stop Paper Bot</button>
+
+                    <p class="muted" id="action-msg" style="margin-top:12px;font-size:13px;"></p>
+
+                    <p class="muted" style="margin-top:10px;font-size:12px;">
+                        Paper trading only — orders are simulated and never sent to an
+                        exchange. Real-money execution requires
+                        <code>LIVE_TRADING_CONFIRMED=yes</code> in the server environment,
+                        which no endpoint here can set.
+                    </p>
 
                 </div>
 
@@ -150,6 +115,8 @@
 
 </div>
 
+<script src="/common.js"></script>
+<script src="/layout.js"></script>
 <script src="/app.js"></script>
 
 </body>

@@ -1,78 +1,74 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deposit Funds</title>
-
-    <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deposit — Quant Platform</title>
+<link rel="stylesheet" href="/style.css">
 </head>
+<body data-title="Deposit Funds">
+<div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+        <header class="topbar" id="topbar"></header>
+        <section class="content">
 
-<body class="bg-gray-950 text-white">
+            <h1 class="page-title">Deposit Funds</h1>
+            <p class="page-sub">Simulated. No payment processor is connected.</p>
 
-<div class="max-w-4xl mx-auto p-8">
+            <div class="banner warn">
+                <b>This form does not move money.</b> There is no payment processor, no
+                account, and no funds behind it — the platform's paper-trading balance is a
+                virtual $100,000 that exists only in the simulation. Entering an amount here
+                shows a message and nothing else.
+            </div>
 
-    <h1 class="text-4xl font-bold mb-8">
-        Deposit Funds
-    </h1>
+            <div class="panel" style="max-width:560px;">
 
-    <div class="bg-gray-900 rounded-xl p-6">
+                <h3>Amount (USD)</h3>
+                <input id="amount" type="number" placeholder="1000"
+                       style="width:100%;padding:12px;margin:8px 0 20px;border-radius:8px;
+                              border:1px solid #334155;background:#0f172a;color:#fff;font-size:15px;">
 
-        <label class="block mb-2 text-gray-400">
-            Amount (USD)
-        </label>
+                <h3>Payment Method</h3>
+                <select id="method"
+                        style="width:100%;padding:12px;margin:8px 0 20px;border-radius:8px;
+                               border:1px solid #334155;background:#0f172a;color:#fff;font-size:15px;">
+                    <option>Bank Transfer</option>
+                    <option>Visa</option>
+                    <option>MasterCard</option>
+                    <option>Crypto Wallet</option>
+                </select>
 
-        <input
-            id="amount"
-            type="number"
-            placeholder="1000"
-            class="w-full p-3 rounded bg-gray-800 mb-6"
-        >
+                <button class="action green" onclick="depositFunds()">Record Demo Deposit</button>
 
-        <label class="block mb-2 text-gray-400">
-            Payment Method
-        </label>
+                <p id="result" class="muted" style="margin-top:16px;font-size:14px;"></p>
 
-        <select
-            id="method"
-            class="w-full p-3 rounded bg-gray-800 mb-6"
-        >
-            <option>Bank Transfer</option>
-            <option>Visa</option>
-            <option>MasterCard</option>
-            <option>Crypto Wallet</option>
-        </select>
+            </div>
 
-        <button
-            onclick="depositFunds()"
-            class="bg-green-600 px-6 py-3 rounded-lg hover:bg-green-700"
-        >
-            Deposit
-        </button>
+            <p style="margin-top:22px;">
+                <a class="link" href="/">← Back to Dashboard</a>
+            </p>
 
-        <p id="result" class="mt-6 text-green-400"></p>
-
-    </div>
-
-    <a href="/" class="inline-block mt-8 text-blue-400">
-        ← Back to Dashboard
-    </a>
-
+        </section>
+    </main>
 </div>
 
+<script src="/common.js"></script>
+<script src="/layout.js"></script>
 <script>
-
-async function depositFunds(){
-
-    const amount=document.getElementById("amount").value;
-    const method=document.getElementById("method").value;
-
-    document.getElementById("result").innerHTML=
-        `Demo deposit of <b>$${amount}</b> via ${method} successful.`;
-
+function depositFunds() {
+    const amount = document.getElementById("amount").value;
+    const method = document.getElementById("method").value;
+    const result = document.getElementById("result");
+    if (!amount || Number(amount) <= 0) {
+        result.textContent = "Enter an amount greater than zero.";
+        return;
+    }
+    result.textContent =
+        `Simulated: would record a $${Number(amount).toLocaleString()} deposit via ${method}. ` +
+        `Nothing was charged — no processor is connected.`;
 }
-
 </script>
-
 </body>
 </html>

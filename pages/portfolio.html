@@ -1,34 +1,25 @@
-<body class="bg-slate-900 text-white">
-
-<div id="sidebar"></div>
-
-<div class="ml-64">
-
-    <div id="topbar"></div>
-
-<main class="p-8">
-	<div class="flex gap-4 my-8">
-
-	<a href="/pages/deposit.html"
-	class="bg-green-600 px-6 py-3 rounded-lg">
-	Deposit Funds
-	</a>
-
-	<a href="/pages/withdraw.html"
-	class="bg-red-600 px-6 py-3 rounded-lg">
-	Withdraw Funds
-	</a>
-
-	<a href="/pages/transactions.html"
-	class="bg-blue-600 px-6 py-3 rounded-lg">
-	Transaction History
-	</a>
-</main>
-
-    </div>
-
-<script src="/layout.js"></script>
-
-</body>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio — Quant Platform</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body data-page="portfolio" data-title="Portfolio">
+<div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+        <header class="topbar" id="topbar"></header>
+        <section class="content">
+            <h1 class="page-title">Portfolio</h1>
+            <p class="page-sub">Paper account equity, drawdown, and open positions.</p>
+            <div id="page-content"><p class="spinner">Loading…</p></div>
+        </section>
+    </main>
 </div>
+<script src="/common.js"></script>
+<script src="/layout.js"></script>
+<script src="/pages.js"></script>
+</body>
+</html>

@@ -48,6 +48,8 @@ _TRANSITION = {
 _SYMBOL_PARAMS = {
     "BTC/USDT": dict(start_price=62000.0, vol_scale=1.6, asset_class="crypto"),
     "ETH/USDT": dict(start_price=3400.0, vol_scale=1.9, asset_class="crypto"),
+    "SOL/USDT": dict(start_price=150.0, vol_scale=2.3, asset_class="crypto"),
+    "BNB/USDT": dict(start_price=580.0, vol_scale=1.8, asset_class="crypto"),
     "EUR/USD": dict(start_price=1.0850, vol_scale=0.35, asset_class="forex"),
     "GBP/USD": dict(start_price=1.2650, vol_scale=0.40, asset_class="forex"),
 }
@@ -166,7 +168,15 @@ class SyntheticProvider(DataProvider):
                 self._demo_clock[symbol] += timedelta(minutes=_TIMEFRAME_MINUTES[timeframe])
             end = self._demo_clock[symbol]
         freq = f"{_TIMEFRAME_MINUTES[timeframe]}min"
-        timestamps = pd.date_range(end=end, periods=n, freq=freq, tz="UTC")
+        # pandas 3.0 rejects passing a tz-aware `end` alongside tz="UTC"
+        # ("Cannot pass a datetime or Timestamp with tzinfo with the tz
+        # parameter"). Normalize the endpoint to a UTC Timestamp instead.
+        end_ts = pd.Timestamp(end)
+        end_ts = (
+            end_ts.tz_convert("UTC") if end_ts.tzinfo is not None
+            else end_ts.tz_localize("UTC")
+        )
+        timestamps = pd.date_range(end=end_ts, periods=n, freq=freq)
 
         df = pd.DataFrame(
             {

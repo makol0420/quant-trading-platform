@@ -59,22 +59,37 @@ class CryptoCCXTProvider(DataProvider):
         limit = limit or 1000
         since = int(start.timestamp() * 1000) if start else None
 
+        if since is None:
+            # ccxt returns the *most recent* bars when `since` is omitted,
+            # not the oldest. Paging forward from there runs off the end of
+            # the series immediately, so asking for 20000 bars used to
+            # silently return 1000 and report success. Deriving an explicit
+            # start makes the forward paging below behave correctly, and
+            # stays exchange-agnostic -- no venue-specific `endTime` param.
+            tf_seconds = self.exchange.parse_timeframe(timeframe)
+            since = self.exchange.milliseconds() - limit * tf_seconds * 1000
+
         all_rows = []
-        remaining = limit
         cursor = since
-        # ccxt caps rows per call (usually 500-1500 depending on exchange);
-        # page backward/forward until we have `limit` rows.
-        while remaining > 0:
+        while len(all_rows) < limit:
             batch = self.exchange.fetch_ohlcv(
-                symbol, timeframe=timeframe, since=cursor, limit=min(remaining, 1000)
+                symbol, timeframe=timeframe, since=cursor,
+                limit=min(limit - len(all_rows), 1000),
             )
             if not batch:
                 break
             all_rows.extend(batch)
-            remaining -= len(batch)
-            if len(batch) < min(remaining + len(batch), 1000):
+
+            # Advance past the last bar received. If the cursor ever fails
+            # to move forward the exchange is echoing the same page, and
+            # looping forever would hang the caller -- stop instead.
+            next_cursor = batch[-1][0] + 1
+            if next_cursor <= cursor:
                 break
-            cursor = batch[-1][0] + 1
+            cursor = next_cursor
+
+            if len(batch) < 1000:
+                break  # short page == the exchange has no more history left
             time.sleep(self.exchange.rateLimit / 1000)
 
         if not all_rows:
@@ -86,10 +101,21 @@ class CryptoCCXTProvider(DataProvider):
         df = pd.DataFrame(
             all_rows, columns=["ts", "open", "high", "low", "close", "volume"]
         )
+        # Pages can overlap by a bar; de-duplicate before reindexing so the
+        # index is unique (and trim to the requested size).
+        df = df.drop_duplicates(subset="ts", keep="last").tail(limit)
         df["timestamp"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
         df = df.set_index("timestamp").drop(columns=["ts"]).sort_index()
         if end is not None:
-            df = df[df.index <= pd.Timestamp(end, tz="UTC")]
+            # pandas 3.0 rejects passing a tz-aware datetime together with
+            # tz="UTC" ("Cannot pass a datetime or Timestamp with tzinfo with
+            # the tz parameter"). Normalize to a UTC Timestamp first.
+            end_ts = pd.Timestamp(end)
+            end_ts = (
+                end_ts.tz_convert("UTC") if end_ts.tzinfo is not None
+                else end_ts.tz_localize("UTC")
+            )
+            df = df[df.index <= end_ts]
         return df
 
     def stream(self, symbol: str, timeframe: str) -> Iterator[Bar]:

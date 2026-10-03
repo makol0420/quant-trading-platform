@@ -6,11 +6,12 @@ across all three modes.
 
 **Read this before the code:** if you came here expecting a system that
 prints money, the honest answer up front is that this reference build's
-own demo backtest *loses* money (-15.0% over 70 simulated days) once real
-fees, slippage, and a genuine walk-forward validation are applied. That's
-not a bug — it's the platform doing exactly what it's supposed to do:
-tell you the truth about a strategy instead of a flattering one. See
-[What the demo actually shows](#what-the-demo-actually-shows) below.
+own backtest *loses* money (-15.1% over 70 days of **real Binance data**)
+once real fees, slippage, and a genuine walk-forward validation are
+applied. That's not a bug — it's the platform doing exactly what it's
+supposed to do: tell you the truth about a strategy instead of a
+flattering one. See [What this build actually
+shows](#what-this-build-actually-shows) below.
 
 ## Why this exists / how to read the results honestly
 
@@ -30,12 +31,12 @@ make a backtest honest:
 This platform is built specifically so those two shortcuts aren't
 available even by accident — see [Methodology](#methodology-the-parts-that-matter-more-than-the-model)
 below. The tradeoff is that the numbers you get are real, which sometimes
-means they're bad. This build's demo run is a legitimate example of that:
-a modest, genuine signal (AUC 0.53-0.65 depending on symbol — better than
-chance, nowhere near the video's implied near-certainty) that doesn't
-clear real trading costs. That is useful information. A platform that
-only ever shows you numbers you want to see isn't one you can trust with
-real money.
+means they're bad. This build's own run is a legitimate example of that:
+a modest, genuine signal (out-of-fold AUC 0.55-0.60 on real BTC/ETH/SOL/BNB
+— better than chance, nowhere near the video's implied near-certainty)
+that doesn't clear real trading costs. That is useful information. A
+platform that only ever shows you numbers you want to see isn't one you
+can trust with real money.
 
 ## Architecture
 
@@ -60,7 +61,7 @@ The backtest deliberately does **not** call the live model — see
 it was trained on would be an in-sample fit dressed up as a backtest.
 
 ```
-config/            YAML config (symbols, thresholds, risk limits)
+config/            YAML config (symbols, thresholds, risk limits) + loader.py resolving it
 data/providers/     DataProvider implementations: synthetic, ccxt (crypto), OANDA (forex)
 features/           Hand-rolled technical indicators, no lookahead
 models/             Dataset labeling, walk-forward training, inference
@@ -70,8 +71,9 @@ execution/          Paper / live order execution clients
 orchestrator/        The paper/live trading loop
 api/                FastAPI backend serving the dashboard
 dashboard/          index.html (live monitor) + report_template.html (backtest report)
-scripts/            Entry points: generate data, train, backtest, paper trade, build report
-tests/              pytest suite for the risk, dataset, metrics, and engine logic
+scripts/            Entry points: bootstrap (all-in-one), fetch, train, backtest, paper trade, build report
+start.sh            Container entrypoint: bootstrap in background, then uvicorn
+tests/              pytest suite for risk, dataset, metrics, engine, providers, API, bootstrap
 ```
 
 ## Quickstart
@@ -80,65 +82,91 @@ tests/              pytest suite for the risk, dataset, metrics, and engine logi
 pip install -r requirements.txt --break-system-packages   # drop the flag if not needed on your system
 cp .env.example .env                                        # fill in real keys later; safe to leave blank for now
 
-python scripts/generate_sample_data.py   # synthetic data -- swap for real data later, see below
+python scripts/fetch_market_data.py      # REAL Binance 5m OHLCV -> data/_cache/ (no API key needed)
 python scripts/train_model.py            # walk-forward training, saves models + OOF predictions
 python scripts/run_backtest.py           # honest backtest using OOF predictions
 python scripts/build_report.py           # builds results/report.html from the backtest above
-python scripts/run_paper_trade.py        # short demo of the live-trading loop, using synthetic "live" data
+python scripts/run_paper_trade.py        # short demo of the paper-trading loop against live prices
 
 uvicorn api.main:app --reload            # serves dashboard/index.html + results/report.html at http://localhost:8000
 ```
 
+`python scripts/bootstrap.py` runs those first four steps in order and skips
+any whose output already exists — that's what a fresh deployment uses (see
+[Deploying](#deploying)), and it's the convenient way to rebuild after a
+config change. `python scripts/bootstrap.py --check` reports which artifacts
+are present without building anything.
+
+To run offline instead of against Binance, use
+`python scripts/generate_sample_data.py` in place of the fetch step and set
+`data_provider.crypto.type: synthetic` in `config/config.yaml`. The rest of
+the pipeline is identical — that indirection is the point of
+`data/providers/base.py`. The synthetic generator is seeded and genuinely
+deterministic across separate process runs (an earlier version used Python's
+built-in `hash()` for a per-symbol seed offset, which is randomized
+per-process for strings and made the "seed" silently non-reproducible; it's
+now a fixed CRC32-based hash instead).
+
 Run the test suite with `pytest tests/ -v`.
 
-## What the demo actually shows
+## What this build actually shows
 
-Running the pipeline above end-to-end (as shipped, no data or parameters
-hand-picked afterward) on ~70 days of **synthetic** 5-minute OHLCV for
-BTC/USDT, ETH/USDT, EUR/USD, and GBP/USD produced:
+Running the pipeline above end-to-end, on **real Binance 5-minute OHLCV**
+for BTC/USDT, ETH/USDT, SOL/USDT, and BNB/USDT — 20,000 bars per symbol,
+2026-07-25 21:15 to 2026-10-03 07:50 UTC, aligned to a common grid — with
+no data or parameters hand-picked afterward:
 
 | Metric | Value |
 |---|---|
-| Total return | **-15.0%** |
-| Sharpe (daily-resampled) | -6.49 |
-| Sortino | -4.90 |
-| Max drawdown | 15.0% (kill-switch limit: 15%) |
-| Win rate | 29.3% |
-| Profit factor | 0.41 |
-| Trades | 796 over 70 days |
+| Total return | **-15.12%** |
+| CAGR | -44.6% |
+| Sharpe (daily-resampled) | -6.29 |
+| Sortino | -6.03 |
+| Max drawdown | 15.12% (kill-switch limit: 15%) |
+| Win rate | 25.3% |
+| Profit factor | 0.279 |
+| Trades | 479 over 70 days |
 
 Per-symbol walk-forward AUC (out-of-fold, i.e. genuinely never seen
-during training): BTC/USDT 0.542, ETH/USDT 0.532, EUR/USD 0.653, GBP/USD
-0.616. Better than the 0.5 coin-flip baseline — the model found *some*
-real, if modest, structure in the (synthetic) data — but not enough to
+during training): BTC/USDT 0.600, ETH/USDT 0.574, BNB/USDT 0.563,
+SOL/USDT 0.549. Better than the 0.5 coin-flip baseline — the model found
+*some* real, if modest, structure in real market data — but not enough to
 clear real transaction costs at the thresholds configured. **The max
-drawdown kill-switch triggered partway through and halted trading for
-the remainder of the backtest** — see the red status banner in
+drawdown kill-switch triggered partway through and halted trading for the
+remainder of the backtest** — see the red status banner in
 `results/report.html` — which is why the loss stops getting worse rather
 than compounding for 70 days straight. That halt is the risk system
 working as designed, not a failure separate from it.
 
-These exact numbers will reproduce if you run the Quickstart commands
-yourself (`data/providers/synthetic.py` is seeded and, as of this build,
-genuinely deterministic across separate process runs — an earlier
-version used Python's built-in `hash()` for a per-symbol seed offset,
-which is randomized per-process for strings and made the "seed" silently
-non-reproducible; it's now a fixed CRC32-based hash instead).
+This is the number that matters most, so it's worth stating plainly: the
+model is *right more often than a coin flip* on real data, and the
+strategy *still loses money*. That gap is transaction costs plus a
+win rate that, at 25%, means the few winners don't pay for the many
+losers. It is exactly the outcome the [Why this exists](#why-this-exists--how-to-read-results-honestly)
+section warns about, and it's what a backtest is for.
 
 Open `results/report.html` for the full interactive breakdown, including
 the walk-forward validation timeline for each symbol.
 
 None of this means "the approach can't work" — it means this
-combination of (synthetic data, this model, these thresholds, these
-costs) didn't clear the bar, and the platform told you so instead of
-hiding it. Tuning thresholds or trying other models is reasonable next
-work; presenting a re-run with better-looking numbers as "the" result
-without disclosing how many configurations were tried would reintroduce
-exactly the kind of backtest-shopping this whole design tries to avoid.
+combination of (real data, this model, these thresholds, these costs)
+didn't clear the bar, and the platform told you so instead of hiding it.
+Tuning thresholds or trying other models is reasonable next work;
+presenting a re-run with better-looking numbers as "the" result without
+disclosing how many configurations were tried would reintroduce exactly
+the kind of backtest-shopping this whole design tries to avoid.
+
+The earlier synthetic-data run of this same pipeline (BTC/ETH/EUR/USD/GBP/USD)
+produced -15.0%, Sharpe -6.49, win rate 29.3% — a similar conclusion from a
+different data source, which is itself mildly reassuring: the platform
+isn't producing that result by accident of one dataset.
 
 ## Going from synthetic to real data
 
-Nothing about the pipeline changes — only the provider.
+Nothing about the pipeline changes — only the provider. This is now the
+**default** configuration: `scripts/fetch_market_data.py` pulls real Binance
+OHLCV into `data/_cache/`, and `train_model.py` / `run_backtest.py` /
+`build_report.py` read from that cache without knowing where it came from.
 
 **Crypto**, via [ccxt](https://github.com/ccxt/ccxt) (100+ exchanges,
 one interface):
@@ -147,6 +175,15 @@ from data.providers.crypto_ccxt import CryptoCCXTProvider
 provider = CryptoCCXTProvider(exchange_id="binance")  # or "coinbase", "kraken", "binanceus", ...
 df = provider.historical("BTC/USDT", "5m", limit=5)     # no API key needed for public market data
 ```
+
+This path is exercised: the results in [What this build actually
+shows](#what-this-build-actually-shows) come from real Binance bars fetched
+through it. One sharp edge worth knowing if you write your own fetch loop —
+calling `fetch_ohlcv` with `since=None` returns the *most recent* bars, not
+the oldest, so paging forward from there immediately runs off the end of the
+series and silently returns a fraction of what you asked for. Always pass an
+explicit `start`. `scripts/fetch_market_data.py` does, and
+`tests/test_providers.py` pins the behaviour down.
 
 **Forex**, via [OANDA's v20 API](https://developer.oanda.com/rest-live-v20/introduction/)
 (free practice account, real historical + live data + execution under one login —
@@ -157,15 +194,25 @@ provider = ForexOandaProvider(api_token="YOUR_TOKEN", practice=True)
 df = provider.historical("EUR_USD", "M5", limit=5)
 ```
 
-**This has not been exercised against a live exchange or broker** — the
-environment this was built in has no route to `api.binance.com` or
-OANDA's servers (verified directly; see the code comments in
-`data/providers/crypto_ccxt.py` and `forex_oanda.py`). Run the snippets
-above on your own machine before trusting either connector.
+**The forex path has not been exercised against live OANDA servers** — it
+returns 403 without a token, and no token was available in the environment
+this was built in. Forex therefore stays on the synthetic provider by
+default. Verify the snippet above on your own machine before trusting the
+connector.
 
-Update `config/config.yaml`'s `data_provider` section and the constants
-at the top of `scripts/*.py` accordingly once you've verified real-data
-connectivity.
+Run forex as its **own pipeline pass**, not mixed with crypto. Every symbol
+in a run must share a byte-identical timestamp index
+(`backtest/engine.py` enforces this, and
+`config/loader.py::align_to_common_index` satisfies it), and Binance stamps
+5-minute bars at :00/:05 while the synthetic forex grid anchors to the current
+wall clock. Pairing them in one equity curve produces a crash, not a result —
+and blending real crypto with synthetic FX would make a misleading number
+even if it ran.
+
+Symbols and providers are resolved from `config/config.yaml` by
+`config/loader.py`; there are no symbol lists or provider constants to edit
+in `scripts/*.py`. To use real FX, set `data_provider.forex.type: oanda`,
+fill `OANDA_API_TOKEN`, and run the pipeline with `--scope forex`.
 
 ## Going live safely
 
@@ -244,8 +291,42 @@ docker build -t quant-platform .
 docker run -p 8000:8000 --env-file .env quant-platform
 ```
 
-Runs the dashboard API only (`uvicorn api.main:app`). The trading loop
+The image runs `start.sh`, which launches `scripts/bootstrap.py` **in the
+background** and then execs `uvicorn api.main:app`. Bootstrap fetches real
+market data, trains, backtests, and builds the report; because it runs in the
+background the port binds immediately, and `/api/health` reports
+`bootstrap.state` (`running` with the current step, then `complete`) so the
+dashboard can say "building artifacts" instead of showing an empty page. A
+restart skips every step whose output already exists, so a redeploy costs a
+few `stat()` calls rather than a full rebuild. Building artifacts into the
+image instead would make it large and, worse, stale.
+
+Only the dashboard API runs here. The trading loop
 (`scripts/run_paper_trade.py` or a live equivalent) is intentionally a
 separate process — see [Going live safely](#going-live-safely) for why
 "the dashboard is running" and "the bot is trading" should never be the
-same on/off switch.
+same on/off switch. The one exception is the paper-trading loop, which the
+dashboard can start and stop through the API; it is paper-only by
+construction (see `api/paper_runner.py`) and cannot place a real order.
+
+## Deploying
+
+The platform works on any host that runs the Dockerfile. Two things to know:
+
+1. **Artifacts are gitignored** (`data/_cache/`, `models/registry/`,
+   `results/backtest_results.json`, `results/training_summary.json`,
+   `runtime_state/`). This is correct for a repo — they're build output — but
+   it means a fresh deploy starts with nothing. `scripts/bootstrap.py` exists
+   to build them at startup. If your platform lets you set a start command,
+   use `./start.sh` (or `uvicorn api.main:app --host 0.0.0.0 --port $PORT`
+   plus a background `python scripts/bootstrap.py`). Running `uvicorn`
+   directly still serves the dashboard, but it will show "no results yet"
+   rather than data.
+2. **Tune the window for a free tier.** `history.bootstrap_bars` in
+   `config/config.yaml` defaults to 6000 (~21 days of 5-minute bars), which
+   keeps startup inside a typical free-tier health-check window. The 20,000-bar
+   figures above take noticeably longer to build.
+
+`/api/health` is the endpoint to watch: `ready: true` means a backtest and at
+least one trained model are on disk. `bootstrap.state: failed` includes the
+step that broke — the build log has the detail.

@@ -1,18 +1,32 @@
 # Quant Bot Platform -- configuration
 #
-# This file is the intended single source of truth for symbols, model
-# hyperparameters, and risk limits. The bundled scripts (scripts/*.py)
-# currently read most of these as constants at the top of each script for
-# clarity while you're getting oriented -- wire them up to load from here
-# via PyYAML once you're past the demo stage and want one place to tune
-# things. See scripts/generate_sample_data.py for the pattern.
+# This file is the single source of truth for symbols, model
+# hyperparameters, and risk limits. scripts/*.py resolve their universe
+# from here via config/loader.py rather than hardcoding their own symbol
+# lists, so retargeting the platform is a config edit, not a code edit.
+#
+# Every symbol in one run must come from ONE provider, and all symbols
+# share a single bar grid -- backtest/engine.py requires a byte-identical
+# timestamp index across symbols (config/loader.py::align_to_common_index
+# enforces this). That's why the pipeline runs one asset class at a time
+# rather than blending crypto and forex into a single equity curve.
 
 mode: paper  # backtest | paper | live
 
 symbols:
+  # Real Binance spot pairs, fetched by scripts/fetch_market_data.py.
+  # Public OHLCV needs no API key; keys are only for order placement.
   crypto:
     - "BTC/USDT"
     - "ETH/USDT"
+    - "SOL/USDT"
+    - "BNB/USDT"
+  # Forex needs a free OANDA practice token to run on real data
+  # (https://www.oanda.com/demo-account/tpa/personal_token). Left
+  # synthetic here so the provider stays exercisable offline. Set
+  # data_provider.forex.type to 'oanda' and fill OANDA_API_TOKEN to use
+  # real FX -- and run forex as its own pipeline pass, not mixed with
+  # crypto above.
   forex:
     - "EUR/USD"
     - "GBP/USD"
@@ -21,8 +35,8 @@ timeframe: "5m"
 
 data_provider:
   crypto:
-    type: synthetic     # synthetic | ccxt
-    exchange_id: binance # used when type: ccxt
+    type: ccxt          # synthetic | ccxt
+    exchange_id: binance # used when type: ccxt (use binanceus if your IP is US-based)
   forex:
     type: synthetic     # synthetic | oanda
     practice: true        # used when type: oanda
@@ -54,3 +68,11 @@ backtest:
 orchestrator:
   poll_seconds: 60      # real deployments: match your timeframe (e.g. 300 for 5m bars)
   lookback_bars: 150
+
+# How much history the fetch script pulls. 20000 5-minute bars is ~69 days
+# -- long enough that daily-resampled Sharpe/Sortino mean something. The
+# deployed bootstrap uses a smaller window so a free-tier container can
+# build its artifacts before the health check times out.
+history:
+  bars: 20000
+  bootstrap_bars: 6000   # used by scripts/bootstrap.py (container startup)

@@ -3,72 +3,23 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Transaction History</title>
-
-<script src="https://cdn.tailwindcss.com"></script>
+<title>Transactions — Quant Platform</title>
+<link rel="stylesheet" href="/style.css">
 </head>
-
-<body class="bg-gray-950 text-white">
-
-<div class="max-w-6xl mx-auto p-8">
-
-<h1 class="text-4xl font-bold mb-8">
-Transaction History
-</h1>
-
-<table class="w-full bg-gray-900 rounded-xl overflow-hidden">
-
-<thead class="bg-gray-800">
-
-<tr>
-
-<th class="p-4">Date</th>
-
-<th class="p-4">Type</th>
-
-<th class="p-4">Amount</th>
-
-<th class="p-4">Status</th>
-
-</tr>
-
-</thead>
-
-<tbody>
-
-<tr>
-
-<td class="p-4">2026-07-08</td>
-
-<td class="p-4">Deposit</td>
-
-<td class="p-4">$2,000</td>
-
-<td class="p-4 text-green-400">Completed</td>
-
-</tr>
-
-<tr>
-
-<td class="p-4">2026-07-06</td>
-
-<td class="p-4">Withdrawal</td>
-
-<td class="p-4">$500</td>
-
-<td class="p-4 text-yellow-400">Pending</td>
-
-</tr>
-
-</tbody>
-
-</table>
-
-<a href="/" class="inline-block mt-8 text-blue-400">
-← Back to Dashboard
-</a>
-
+<body data-page="transactions" data-title="Transactions">
+<div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+        <header class="topbar" id="topbar"></header>
+        <section class="content">
+            <h1 class="page-title">Transactions</h1>
+            <p class="page-sub">Simulated paper-trading fills. No real money moves.</p>
+            <div id="page-content"><p class="spinner">Loading…</p></div>
+        </section>
+    </main>
 </div>
-
+<script src="/common.js"></script>
+<script src="/layout.js"></script>
+<script src="/pages.js"></script>
 </body>
 </html>
