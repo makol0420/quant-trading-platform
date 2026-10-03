@@ -123,35 +123,83 @@ class _Proc:
         self.returncode = returncode
 
 
+def _fake_popen(returncode, lines=(), on_start=None):
+    """
+    Stand-in for subprocess.Popen: run_step streams from `.stdout` and then
+    calls `.wait()`, so the fake needs both.
+    """
+    class FakePopen:
+        def __init__(self, cmd, **kwargs):
+            if on_start:
+                on_start()
+            self.stdout = iter([f"{ln}\n" for ln in lines])
+            self._returncode = returncode
+
+        def wait(self):
+            return self._returncode
+
+    return FakePopen
+
+
 def test_run_step_fails_on_nonzero_exit(tmp_path, monkeypatch):
     out = tmp_path / "artifact.json"
-    monkeypatch.setattr(bootstrap.subprocess, "run", lambda *a, **k: _Proc(1))
+    monkeypatch.setattr(bootstrap.subprocess, "Popen", _fake_popen(1))
 
-    assert not bootstrap.run_step(bootstrap.Step("train", ["t.py"], outputs=[out]))
+    ok, error = bootstrap.run_step(bootstrap.Step("train", ["t.py"], outputs=[out]))
+
+    assert not ok
+    assert "train" in error
 
 
 def test_run_step_fails_when_exit_zero_but_nothing_was_produced(tmp_path, monkeypatch):
     """
-    The silent failure. Returning True here would write state=complete and
+    The silent failure. Returning ok here would write state=complete and
     mark the step done, so every later restart would skip it and the
     instance would stay artifact-less while reporting healthy.
     """
     out = tmp_path / "never_written.json"
-    monkeypatch.setattr(bootstrap.subprocess, "run", lambda *a, **k: _Proc(0))
+    monkeypatch.setattr(bootstrap.subprocess, "Popen", _fake_popen(0))
 
-    assert not bootstrap.run_step(bootstrap.Step("train", ["t.py"], outputs=[out]))
+    ok, error = bootstrap.run_step(bootstrap.Step("train", ["t.py"], outputs=[out]))
+
+    assert not ok
+    assert "no output" in error
 
 
 def test_run_step_succeeds_when_the_artifact_appears(tmp_path, monkeypatch):
     out = tmp_path / "written.json"
+    monkeypatch.setattr(
+        bootstrap.subprocess, "Popen", _fake_popen(0, on_start=lambda: out.write_text("{}"))
+    )
 
-    def fake_run(*args, **kwargs):
-        out.write_text("{}")
-        return _Proc(0)
+    ok, error = bootstrap.run_step(bootstrap.Step("train", ["t.py"], outputs=[out]))
 
-    monkeypatch.setattr(bootstrap.subprocess, "run", fake_run)
+    assert ok
+    assert error == ""
 
-    assert bootstrap.run_step(bootstrap.Step("train", ["t.py"], outputs=[out]))
+
+def test_failure_error_carries_the_actual_message(tmp_path, monkeypatch):
+    """
+    The reason a step died has to survive into the status file: on a hosted
+    platform /api/health is often the only surface you can reach, so a bare
+    "fetch failed" would leave the cause buried in a build log behind a
+    dashboard login.
+    """
+    out = tmp_path / "artifact.json"
+    monkeypatch.setattr(
+        bootstrap.subprocess,
+        "Popen",
+        _fake_popen(1, lines=[
+            "Fetching 6000 x 5m bars",
+            "binance: FAILED -- ExchangeNotAvailable: binance is restricted (HTTP 451)",
+        ]),
+    )
+
+    ok, error = bootstrap.run_step(bootstrap.Step("fetch", ["f.py"], outputs=[out]))
+
+    assert not ok
+    assert "451" in error
+    assert "restricted" in error
 
 
 # --------------------------------------------------------------------------
@@ -162,7 +210,7 @@ def test_run_step_succeeds_when_the_artifact_appears(tmp_path, monkeypatch):
 def test_main_reports_failure_and_stops_at_the_broken_step(tmp_path, monkeypatch):
     monkeypatch.setattr(bootstrap, "STATE_DIR", tmp_path)
     monkeypatch.setattr(bootstrap, "STATUS_PATH", tmp_path / "s.json")
-    monkeypatch.setattr(bootstrap.subprocess, "run", lambda *a, **k: _Proc(1))
+    monkeypatch.setattr(bootstrap.subprocess, "Popen", _fake_popen(1, lines=["boom"]))
     # --force so this exercises the build path even on a machine that already
     # has the artifacts checked out.
     monkeypatch.setattr(sys, "argv", ["bootstrap.py", "--force"])
@@ -174,6 +222,7 @@ def test_main_reports_failure_and_stops_at_the_broken_step(tmp_path, monkeypatch
     assert status["state"] == "failed"
     assert status["step"] == "fetch"           # first step, nothing completed
     assert status["completed"] == []
+    assert "boom" in status["error"]
 
 
 def test_main_marks_complete_when_everything_is_already_built(tmp_path, monkeypatch):
@@ -198,7 +247,7 @@ def test_main_marks_complete_when_everything_is_already_built(tmp_path, monkeypa
     def explode(*args, **kwargs):
         raise AssertionError("nothing should run when all outputs already exist")
 
-    monkeypatch.setattr(bootstrap.subprocess, "run", explode)
+    monkeypatch.setattr(bootstrap.subprocess, "Popen", explode)
     monkeypatch.setattr(sys, "argv", ["bootstrap.py"])
 
     assert bootstrap.main() == 0
@@ -216,12 +265,60 @@ def test_force_rebuilds_even_when_outputs_exist(tmp_path, monkeypatch):
 
     ran = []
 
-    def fake_run(*args, **kwargs):
-        ran.append(args)
-        return _Proc(0)
+    def fake_popen(cmd, **kwargs):
+        ran.append(cmd)
+        return _fake_popen(0)(cmd, **kwargs)
 
-    monkeypatch.setattr(bootstrap.subprocess, "run", fake_run)
+    monkeypatch.setattr(bootstrap.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(sys, "argv", ["bootstrap.py", "--force"])
 
     assert bootstrap.main() == 0
     assert ran, "--force must re-run a step whose output already exists"
+
+
+# --------------------------------------------------------------------------
+# Staleness
+# --------------------------------------------------------------------------
+
+
+def test_committed_report_does_not_look_pre_built(tmp_path):
+    """
+    results/report.html is committed to the repo; results/backtest_results.json
+    is gitignored. On a fresh container the report therefore exists while its
+    input does not, and an existence-only check would skip regeneration --
+    shipping the repository's report instead of the container's own backtest.
+    """
+    report = tmp_path / "report.html"
+    backtest = tmp_path / "backtest_results.json"
+    report.write_text("old")
+    backtest.write_text("new")
+
+    import os
+    import time as _time
+    os.utime(report, (_time.time() - 600, _time.time() - 600))
+
+    step = bootstrap.Step("report", ["r.py"], outputs=[report], newer_than=[backtest])
+
+    assert not step.is_done(), "report is older than the backtest it summarises"
+
+    os.utime(report, (_time.time() + 600, _time.time() + 600))
+    assert step.is_done()
+
+
+def test_missing_dependency_does_not_mark_step_stale(tmp_path):
+    """No backtest yet means nothing to be stale against -- not a reason to
+    claim the report is outdated."""
+    report = tmp_path / "report.html"
+    report.write_text("x")
+
+    step = bootstrap.Step(
+        "report", ["r.py"], outputs=[report], newer_than=[tmp_path / "absent.json"]
+    )
+
+    assert step.is_done()
+
+
+def test_report_step_depends_on_the_backtest():
+    steps = {s.name: s for s in bootstrap.build_steps(loader.load_config(), 6000, "crypto")}
+
+    assert steps["report"].newer_than == [bootstrap.RESULTS_DIR / "backtest_results.json"]

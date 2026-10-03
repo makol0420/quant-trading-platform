@@ -311,7 +311,7 @@ construction (see `api/paper_runner.py`) and cannot place a real order.
 
 ## Deploying
 
-The platform works on any host that runs the Dockerfile. Two things to know:
+The platform works on any host that runs the Dockerfile. Three things to know:
 
 1. **Artifacts are gitignored** (`data/_cache/`, `models/registry/`,
    `results/backtest_results.json`, `results/training_summary.json`,
@@ -322,11 +322,23 @@ The platform works on any host that runs the Dockerfile. Two things to know:
    plus a background `python scripts/bootstrap.py`). Running `uvicorn`
    directly still serves the dashboard, but it will show "no results yet"
    rather than data.
-2. **Tune the window for a free tier.** `history.bootstrap_bars` in
+2. **Where you host decides which exchange you can reach.**
+   `binance.com` returns HTTP 451 (Unavailable For Legal Reasons) to US IP
+   addresses, so a host in the US — Render, Fly, most free tiers — cannot
+   fetch from it at all. `data_provider.crypto.fallback_exchanges` in
+   `config/config.yaml` lists venues tried in order when the primary fails;
+   it ships as `[binanceus]`, the US-regulated venue serving the same four
+   pairs. `scripts/fetch_market_data.py` prints which venue it used and
+   records it in `data/_cache/_source.json`, which `run_backtest.py` copies
+   into the results as `data_source.exchange` — so a run on Binance US is
+   never silently reported as Binance.
+3. **Tune the window for a free tier.** `history.bootstrap_bars` in
    `config/config.yaml` defaults to 6000 (~21 days of 5-minute bars), which
    keeps startup inside a typical free-tier health-check window. The 20,000-bar
    figures above take noticeably longer to build.
 
 `/api/health` is the endpoint to watch: `ready: true` means a backtest and at
-least one trained model are on disk. `bootstrap.state: failed` includes the
-step that broke — the build log has the detail.
+least one trained model are on disk. When something fails, `bootstrap.state`
+is `failed` and `bootstrap.error` carries the last lines of the failing
+step's output — deliberately, because on a hosted platform the API is often
+the only surface you can reach without a dashboard login.

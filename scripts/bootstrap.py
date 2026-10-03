@@ -36,6 +36,7 @@ import argparse
 import json
 import subprocess
 import time
+from collections import deque
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
@@ -48,16 +49,34 @@ MODELS_DIR = BASE_DIR / "models" / "registry"
 STATE_DIR = BASE_DIR / "runtime_state"
 STATUS_PATH = STATE_DIR / "bootstrap_status.json"
 
+#: How much of a failed step's output to keep for reporting.
+ERROR_TAIL_LINES = 25
+
 
 @dataclass
 class Step:
     name: str
     argv: list[str]
-    #: Relative paths that must all exist for this step to count as done.
+    #: Paths that must all exist for this step to count as done.
     outputs: list[Path] = field(default_factory=list)
+    #: Paths this step consumes. If any is newer than every output, the step
+    #: is stale and must re-run -- see is_done.
+    newer_than: list[Path] = field(default_factory=list)
 
     def is_done(self) -> bool:
-        return bool(self.outputs) and all(p.exists() for p in self.outputs)
+        if not self.outputs or not all(p.exists() for p in self.outputs):
+            return False
+
+        # Existence alone is not enough when the output is committed to the
+        # repo. results/report.html is tracked; results/backtest_results.json
+        # is gitignored. On a fresh container the report therefore looks
+        # pre-built and would be skipped, shipping the repository's report
+        # instead of this run's backtest. Comparing timestamps catches that.
+        oldest_output = min(p.stat().st_mtime for p in self.outputs)
+        return all(
+            not p.exists() or p.stat().st_mtime <= oldest_output
+            for p in self.newer_than
+        )
 
     @property
     def display(self) -> str:
@@ -121,26 +140,63 @@ def build_steps(cfg: dict, bars: int, scope: str) -> list[Step]:
             "report",
             ["scripts/build_report.py"],
             outputs=[RESULTS_DIR / "report.html"],
+            # report.html is committed to the repo but its inputs are not, so
+            # a fresh checkout would otherwise skip this step and serve the
+            # repository's report rather than the container's own backtest.
+            newer_than=[RESULTS_DIR / "backtest_results.json"],
         ),
     ]
 
 
-def run_step(step: Step) -> bool:
+def _summarize_failure(tail: deque[str], name: str, code: int) -> str:
+    """
+    Turn a failed step's output tail into one line fit for /api/health.
+
+    On a hosted platform the API is often the only surface you can actually
+    reach -- Render's build log lives behind a dashboard login -- so the
+    reason a step died belongs in the status file, not only in stdout.
+    """
+    lines = [ln.strip() for ln in tail if ln.strip()]
+    if not lines:
+        return f"{name} exited {code} with no output"
+    detail = " | ".join(lines[-4:])
+    return f"{name} exited {code}: {detail}"
+
+
+def run_step(step: Step) -> tuple[bool, str]:
     """
     Run one step, streaming its output into this process's stdout so the
     platform's build log is one continuous record rather than four
     interleaved buffers.
+
+    Returns (ok, error). The tail of the output is retained so a failure can
+    be reported through /api/health as well as the build log -- on a hosted
+    platform the API is frequently the only thing you can reach.
     """
     print(f"\n{'=' * 70}\n[bootstrap] {step.name}: {' '.join(step.argv)}\n{'=' * 70}", flush=True)
     started = time.monotonic()
 
-    proc = subprocess.run([sys.executable, *step.argv], cwd=str(BASE_DIR))
+    # Popen rather than subprocess.run so output can be streamed line by line
+    # *and* kept. run() would force a choice between the two.
+    proc = subprocess.Popen(
+        [sys.executable, *step.argv],
+        cwd=str(BASE_DIR),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    tail: deque[str] = deque(maxlen=ERROR_TAIL_LINES)
+    for line in proc.stdout:
+        print(line, end="", flush=True)
+        tail.append(line.rstrip())
+    code = proc.wait()
     elapsed = time.monotonic() - started
 
-    if proc.returncode != 0:
+    if code != 0:
         print(f"[bootstrap] {step.name} FAILED after {elapsed:.1f}s "
-              f"(exit {proc.returncode})", file=sys.stderr, flush=True)
-        return False
+              f"(exit {code})", file=sys.stderr, flush=True)
+        return False, _summarize_failure(tail, step.name, code)
 
     # A step that exits 0 without producing its artifact would otherwise be
     # recorded as success and skipped forever on every subsequent restart.
@@ -148,10 +204,10 @@ def run_step(step: Step) -> bool:
         missing = ", ".join(_rel(p) for p in step.outputs if not p.exists())
         print(f"[bootstrap] {step.name} exited 0 but produced nothing at: {missing}",
               file=sys.stderr, flush=True)
-        return False
+        return False, f"{step.name} exited 0 but produced no output at {missing}"
 
     print(f"[bootstrap] {step.name} done in {elapsed:.1f}s", flush=True)
-    return True
+    return True, ""
 
 
 def main() -> int:
@@ -188,9 +244,10 @@ def main() -> int:
                       started_at=started_at, completed=[s.name for s in steps[:i]],
                       total_steps=len(steps))
 
-        if not run_step(step):
+        ok, error = run_step(step)
+        if not ok:
             _write_status(state="failed", step=step.name, bars=args.bars, scope=args.scope,
-                          started_at=started_at, error=f"{step.name} failed; see build log",
+                          started_at=started_at, error=error,
                           completed=[s.name for s in steps[:i]], total_steps=len(steps))
             return 1
 

@@ -36,7 +36,14 @@ timeframe: "5m"
 data_provider:
   crypto:
     type: ccxt          # synthetic | ccxt
-    exchange_id: binance # used when type: ccxt (use binanceus if your IP is US-based)
+    exchange_id: binance # used when type: ccxt
+    # Tried in order if exchange_id fails. binance.com returns HTTP 451
+    # (Unavailable For Legal Reasons) to US IP addresses, so any host in the
+    # US -- Render, Fly, most free tiers -- needs binanceus, the US-regulated
+    # venue serving the same pairs. Without this the deployed instance cannot
+    # fetch at all and serves an empty dashboard.
+    fallback_exchanges:
+      - binanceus
   forex:
     type: synthetic     # synthetic | oanda
     practice: true        # used when type: oanda

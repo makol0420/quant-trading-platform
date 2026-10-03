@@ -18,6 +18,7 @@ import json
 import pandas as pd
 
 from config import loader
+from data import storage
 from backtest.oof_strategy import OOFReplayStrategy
 from backtest.engine import BacktestEngine
 from backtest.metrics import compute_performance
@@ -128,6 +129,18 @@ def main() -> int:
     )
     providers = sorted({training_summary.get(s, {}).get("provider", "unknown") for s in symbols})
 
+    # Which venue served the data. The cache is keyed by provider
+    # ("crypto_ccxt"), not by exchange, so Binance and Binance US produce
+    # identical-looking results without this.
+    source_path = storage.CACHE_DIR / "_source.json"
+    exchange = None
+    if source_path.exists():
+        try:
+            with open(source_path) as f:
+                exchange = json.load(f).get("exchange")
+        except (json.JSONDecodeError, OSError):
+            exchange = None
+
     payload = {
         "starting_equity": STARTING_EQUITY,
         "fee_bps": FEE_BPS,
@@ -143,11 +156,18 @@ def main() -> int:
             "providers": providers,
             "timeframe": timeframe,
             "n_bars": n_common,
+            "exchange": exchange,
             "start": str(next(iter(price_data.values())).index[0]),
             "end": str(next(iter(price_data.values())).index[-1]),
         },
         "note": (
-            "REAL exchange data (ccxt/Binance). Fees and slippage applied per side; "
+            # Name the venue when known. Caches fetched before _source.json
+            # existed can't say, and "ccxt/unknown venue" would be a worse
+            # claim than simply not naming one.
+            f"REAL exchange data (ccxt/{exchange}). Fees and slippage "
+            "applied per side; predictions are walk-forward out-of-fold."
+            if is_real and exchange else
+            "REAL exchange data (ccxt). Fees and slippage applied per side; "
             "predictions are walk-forward out-of-fold."
             if is_real else
             "SYNTHETIC DATA -- generated for pipeline testing, not a real market. See README."
