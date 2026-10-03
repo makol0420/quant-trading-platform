@@ -66,8 +66,23 @@ class RiskManager:
         max_qty = max_notional / price
         return min(qty, max_qty)
 
-    def check_entry_allowed(self, equity: float, proposed_exposure_pct: float) -> tuple[bool, str]:
-        """Call before opening/increasing a position. Returns (allowed, reason_if_not)."""
+    def check_entry_allowed(self, equity: float, projected_exposure_pct: float) -> tuple[bool, str]:
+        """
+        Call before opening/increasing a position. Returns (allowed, reason_if_not).
+
+        `projected_exposure_pct` is the portfolio's TOTAL gross exposure as a
+        percentage of equity *if this trade executes* -- not the size of the
+        trade itself. That distinction is the whole reason this parameter is
+        named the way it is: an earlier version took the proposed position's
+        size and added it to `state.open_exposure_pct`, which both (a) counted
+        the symbol's existing leg twice when sizing up a position already held,
+        and (b) stayed stale for the rest of a bar, because callers computed
+        total exposure once and then opened several positions against that one
+        pre-computed number. Four symbols at 20% each sailed through a 60% cap
+        and landed at 80% exposure. Callers now compute the projected total
+        from live positions (see `projected_exposure_pct` below) so the cap
+        binds on the portfolio, which is what it says it does.
+        """
         if self.state.trading_halted:
             return False, self.state.halt_reason
 
@@ -81,10 +96,10 @@ class RiskManager:
             self.state.halt_reason = f"max_drawdown_kill_switch ({drawdown_pct:.2f}% >= {self.limits.max_drawdown_pct}%)"
             return False, self.state.halt_reason
 
-        if self.state.open_exposure_pct + proposed_exposure_pct > self.limits.max_total_exposure_pct:
+        if projected_exposure_pct > self.limits.max_total_exposure_pct:
             return False, (
                 f"max_total_exposure_exceeded "
-                f"({self.state.open_exposure_pct + proposed_exposure_pct:.1f}% > {self.limits.max_total_exposure_pct}%)"
+                f"({projected_exposure_pct:.1f}% > {self.limits.max_total_exposure_pct}%)"
             )
 
         return True, ""
@@ -132,3 +147,88 @@ class RiskManager:
         before trading resumes."""
         self.state.trading_halted = False
         self.state.halt_reason = ""
+
+
+def gross_exposure_pct(positions: dict[str, float], prices: dict[str, float], equity: float) -> float:
+    """
+    Total gross notional exposure as a percentage of equity: the sum of
+    |qty * price| across open positions, long and short alike.
+
+    Shorts count against the cap exactly as longs do. The cap exists to
+    bound how much a bad bar can move the portfolio, and a short moves it
+    as much as the equivalent long -- netting them would report a
+    market-neutral-looking 0% for a book that is fully exposed in both
+    directions.
+
+    Returns 0.0 for non-positive equity rather than dividing by zero.
+    """
+    if equity <= 0:
+        return 0.0
+    gross = sum(abs(qty) * prices[symbol] for symbol, qty in positions.items())
+    return gross / equity * 100
+
+
+def projected_exposure_pct(
+    positions: dict[str, float],
+    prices: dict[str, float],
+    equity: float,
+    symbol: str,
+    desired_qty: float,
+) -> float:
+    """
+    What `gross_exposure_pct` would read if `symbol`'s position became
+    `desired_qty`, with every other position unchanged.
+
+    Subtracting the symbol's existing leg before adding the new one is what
+    makes the total-exposure gate correct when sizing an existing position
+    up, down, or through zero into a short -- not just when opening a fresh
+    one. Callers must evaluate this per symbol against live positions, not
+    once per bar: computing the portfolio's exposure once and then testing
+    several symbols against that single stale number is how four 20%
+    positions clear a 60% cap and leave the book 80% exposed.
+    """
+    if equity <= 0:
+        return 0.0
+    gross = sum(abs(qty) * prices[s] for s, qty in positions.items())
+    price = prices[symbol]
+    gross += (abs(desired_qty) - abs(positions.get(symbol, 0.0))) * price
+    return gross / equity * 100
+
+
+# How far over the cap the book may drift before it is trimmed back, as a
+# fraction of the cap. Trimming is itself a trade -- it pays fees and
+# slippage -- so reacting to a 0.01pp breach would bleed cost for nothing.
+# 0.5% of a 60% cap is 0.3pp: small enough that the cap still reads as
+# enforced, wide enough that equity has to move meaningfully to re-trigger.
+EXPOSURE_TRIM_TOLERANCE = 0.005
+
+
+def exposure_trim_scale(
+    positions: dict[str, float],
+    prices: dict[str, float],
+    equity: float,
+    max_total_exposure_pct: float,
+    tolerance: float = EXPOSURE_TRIM_TOLERANCE,
+) -> float:
+    """
+    Factor to scale every open position by to bring the book back inside its
+    total-exposure cap. Returns 1.0 when no trim is needed.
+
+    The entry gate bounds exposure at the moment a position is opened, but a
+    position sized against the equity that existed *then* represents a larger
+    share of a smaller equity later -- and the no-trade band deliberately
+    stops positions being resized every bar, so the book drifts past its cap
+    and sits there. Measured on the bundled backtest: 61.7% against a 60% cap
+    across 112 bars, with cash untouched throughout, i.e. purely equity
+    falling under a fixed notional. A cap that only binds at entry is not the
+    "hard cap on total exposure" it claims to be.
+
+    Reducing risk is never gated, so callers apply this directly rather than
+    routing it through `check_entry_allowed`.
+    """
+    if equity <= 0:
+        return 1.0
+    gross = gross_exposure_pct(positions, prices, equity)
+    if gross <= max_total_exposure_pct * (1.0 + tolerance):
+        return 1.0
+    return max_total_exposure_pct / gross

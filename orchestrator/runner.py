@@ -25,7 +25,12 @@ from data.providers.base import DataProvider
 from execution.base import ExecutionClient
 from execution.paper import PaperExecutionClient
 from strategy.base import Strategy
-from strategy.risk import RiskManager
+from strategy.risk import (
+    RiskManager,
+    exposure_trim_scale,
+    gross_exposure_pct,
+    projected_exposure_pct,
+)
 from features.indicators import atr as compute_atr
 
 STATE_DIR = Path(__file__).parent.parent / "runtime_state"
@@ -74,12 +79,13 @@ class TradingOrchestrator:
         now = datetime.now(timezone.utc)
         self.risk.update_equity(equity, now)
 
-        total_exposure_pct = 0.0
-        for symbol in symbols:
-            qty = self.execution.get_position(symbol)
-            total_exposure_pct += abs(qty * latest_prices[symbol])
-        total_exposure_pct = (total_exposure_pct / equity * 100) if equity > 0 else 0.0
-        self.risk.state.open_exposure_pct = total_exposure_pct
+        positions = {symbol: self.execution.get_position(symbol) for symbol in symbols}
+        self.risk.state.open_exposure_pct = gross_exposure_pct(positions, latest_prices, equity)
+        # Bounds the held book, not just new entries -- see
+        # strategy/risk.py::exposure_trim_scale.
+        trim_scale = exposure_trim_scale(
+            positions, latest_prices, equity, self.risk.limits.max_total_exposure_pct
+        )
 
         for symbol in symbols:
             history = histories[symbol]
@@ -93,7 +99,7 @@ class TradingOrchestrator:
 
             price = latest_prices[symbol]
             atr_val = float(compute_atr(history["high"], history["low"], history["close"]).iloc[-1])
-            current_qty = self.execution.get_position(symbol)
+            current_qty = positions[symbol]
 
             desired_qty = 0.0
             if signal.target_position != 0 and atr_val > 0:
@@ -103,14 +109,23 @@ class TradingOrchestrator:
             if not self.risk.is_significant_change(current_qty, desired_qty):
                 desired_qty = current_qty  # change too small to be worth the transaction cost
 
+            # After the band, so a cap breach can't be suppressed as noise;
+            # risk-reducing, so it needs no gate.
+            if trim_scale < 1.0:
+                desired_qty *= trim_scale
+
             is_adding_risk = abs(desired_qty) > abs(current_qty) or (
                 current_qty != 0 and desired_qty != 0
                 and (current_qty > 0) != (desired_qty > 0)
             )
             if is_adding_risk:
-                proposed_notional = abs(desired_qty) * price
-                proposed_exposure_pct = (proposed_notional / equity * 100) if equity > 0 else 0
-                allowed, reason = self.risk.check_entry_allowed(equity, proposed_exposure_pct)
+                # Against live positions, so opening one symbol can't spend
+                # exposure budget the next symbol is also about to spend --
+                # see strategy/risk.py::check_entry_allowed.
+                projected_pct = projected_exposure_pct(
+                    positions, latest_prices, equity, symbol, desired_qty
+                )
+                allowed, reason = self.risk.check_entry_allowed(equity, projected_pct)
                 if not allowed:
                     desired_qty = 0.0 if self.risk.state.trading_halted else current_qty
 
@@ -118,6 +133,11 @@ class TradingOrchestrator:
             if abs(delta) * price >= 1.0:  # skip dust-sized adjustments
                 side = "buy" if delta > 0 else "sell"
                 result = self.execution.place_order(symbol, side, abs(delta))
+                # Re-read rather than assuming the full delta filled: a
+                # partial fill leaves the book different from `desired_qty`,
+                # and later symbols this cycle must be gated against what is
+                # actually held.
+                positions[symbol] = self.execution.get_position(symbol)
                 self.trade_log.append(
                     {
                         "timestamp": now.isoformat(), "symbol": symbol, "side": side,
@@ -125,6 +145,11 @@ class TradingOrchestrator:
                         "status": result.status, "reason": signal.reason,
                     }
                 )
+
+        # Refresh from the post-trade book so the persisted snapshot reports
+        # the exposure the portfolio is carrying, not the one it entered on.
+        positions = {symbol: self.execution.get_position(symbol) for symbol in symbols}
+        self.risk.state.open_exposure_pct = gross_exposure_pct(positions, latest_prices, equity)
 
         snapshot = self._build_snapshot(equity, latest_prices, now)
         self._persist(snapshot)

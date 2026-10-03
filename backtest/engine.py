@@ -24,7 +24,12 @@ import numpy as np
 import pandas as pd
 
 from strategy.base import Strategy
-from strategy.risk import RiskManager
+from strategy.risk import (
+    RiskManager,
+    exposure_trim_scale,
+    gross_exposure_pct,
+    projected_exposure_pct,
+)
 from features.indicators import atr as compute_atr
 
 LOOKBACK_BARS = 100  # bounded history window passed to strategies each step
@@ -97,25 +102,30 @@ class BacktestEngine:
         start_i = LOOKBACK_BARS
         for i in range(start_i, len(self.index)):
             ts = self.index[i]
+            prices = {s: float(self.price_data[s]["close"].iloc[i]) for s in symbols}
 
             # Mark-to-market equity BEFORE this bar's decisions, using this
             # bar's close (i.e. decisions this bar execute "at the close",
             # a common and simple backtest convention).
-            equity = cash
-            for s in symbols:
-                price_now = self.price_data[s]["close"].iloc[i]
-                equity += positions[s] * price_now
+            equity = cash + sum(positions[s] * prices[s] for s in symbols)
 
             self.risk.update_equity(equity, ts)
+            self.risk.state.open_exposure_pct = gross_exposure_pct(positions, prices, equity)
 
-            total_exposure_pct = sum(
-                abs(positions[s] * self.price_data[s]["close"].iloc[i]) for s in symbols
-            ) / equity * 100 if equity > 0 else 0.0
-            self.risk.state.open_exposure_pct = total_exposure_pct
+            # The entry gate below bounds exposure when a position is opened.
+            # It does not bound the book afterwards: a position sized against
+            # the equity that existed at entry represents a larger share once
+            # equity falls, and the no-trade band deliberately stops it being
+            # resized every bar. Computed once per bar from the bar-start book
+            # and applied to every symbol alike, so the trim is independent of
+            # symbol iteration order. 1.0 when the book is inside its cap.
+            trim_scale = exposure_trim_scale(
+                positions, prices, equity, self.risk.limits.max_total_exposure_pct
+            )
 
             for s in symbols:
                 df = self.price_data[s]
-                price = df["close"].iloc[i]
+                price = prices[s]
                 window = df.iloc[max(0, i - LOOKBACK_BARS + 1): i + 1]
 
                 signal = self.strategies[s].generate_signal(s, window)
@@ -131,14 +141,27 @@ class BacktestEngine:
                 if not self.risk.is_significant_change(current_qty, desired_qty):
                     desired_qty = current_qty  # change too small to be worth the transaction cost
 
+                # Applied after the no-trade band, deliberately: a breach of
+                # the risk cap is not a signal-noise judgement call, so the
+                # band must not be able to suppress the trim. This only
+                # reduces a position, which is why it needs no gate.
+                if trim_scale < 1.0:
+                    desired_qty *= trim_scale
+
                 is_adding_risk = abs(desired_qty) > abs(current_qty) or (
                     current_qty != 0 and desired_qty != 0 and np.sign(current_qty) != np.sign(desired_qty)
                 )
 
                 if is_adding_risk:
-                    proposed_notional = abs(desired_qty) * price
-                    proposed_exposure_pct = proposed_notional / equity * 100 if equity > 0 else 0
-                    allowed, reason = self.risk.check_entry_allowed(equity, proposed_exposure_pct)
+                    # Measured against live `positions` and the pre-trade
+                    # `equity`, so the cap binds on the book as it is being
+                    # built within this bar. Reading a once-per-bar total
+                    # here is the bug that let four symbols open 20% each
+                    # against a 60% cap; symbols are served first-come in
+                    # iteration order, which is inherent to sharing one cap
+                    # sequentially (live trading has the same property).
+                    projected_pct = projected_exposure_pct(positions, prices, equity, s, desired_qty)
+                    allowed, reason = self.risk.check_entry_allowed(equity, projected_pct)
                     if not allowed:
                         desired_qty = 0.0 if self.risk.state.trading_halted else current_qty
 
@@ -163,8 +186,12 @@ class BacktestEngine:
                     )
                 )
 
-            equity_after = cash + sum(positions[s] * self.price_data[s]["close"].iloc[i] for s in symbols)
+            equity_after = cash + sum(positions[s] * prices[s] for s in symbols)
             drawdown_pct = (self.risk.state.peak_equity - equity_after) / self.risk.state.peak_equity * 100
+            # Re-read the book after this bar's fills, so the reported
+            # exposure is what the portfolio is actually carrying rather
+            # than what it carried before the trades.
+            self.risk.state.open_exposure_pct = gross_exposure_pct(positions, prices, equity_after)
             equity_rows.append(
                 {
                     "timestamp": ts,
