@@ -118,26 +118,41 @@ no data or parameters hand-picked afterward:
 
 | Metric | Value |
 |---|---|
-| Total return | **-14.95%** |
-| CAGR | -44.2% |
-| Sharpe (daily-resampled) | -4.66 |
-| Sortino | -4.41 |
-| Max drawdown | 15.07% (kill-switch limit: 15%) |
-| Win rate | 22.5% |
+| Total return | **-15.13%** |
+| CAGR | -44.6% |
+| Sharpe (daily-resampled) | -4.69 |
+| Sortino | -4.74 |
+| Max drawdown | 15.13% (kill-switch limit: 15%) |
+| Win rate | 23.0% |
 | Profit factor | 0.181 |
-| Trades | 929 over 70 days |
+| Trades | 928 over 70 days |
 | Peak gross exposure | 60.3% (cap: 60%) |
 
 Per-symbol walk-forward AUC (out-of-fold, i.e. genuinely never seen
 during training): BTC/USDT 0.600, ETH/USDT 0.574, BNB/USDT 0.563,
 SOL/USDT 0.549. Better than the 0.5 coin-flip baseline — the model found
 *some* real, if modest, structure in real market data — but not enough to
-clear real transaction costs at the thresholds configured. **The max
-drawdown kill-switch triggered partway through and halted trading for the
-remainder of the backtest** — see the red status banner in
-`results/report.html` — which is why the loss stops getting worse rather
-than compounding for 70 days straight. That halt is the risk system
-working as designed, not a failure separate from it.
+clear real transaction costs at the thresholds configured.
+
+**The max drawdown kill-switch triggered and halted trading for the rest of
+the backtest** — see the red status banner in `results/report.html`. It fires
+at bar 1,886 of 19,900, which is about **6.5 days into a 70-day sample**: the
+book is liquidated on that bar (three closing fills), and the remaining
+**18,013 bars — 90% of the run — do nothing at all**, with the equity line
+flat at 84,869.60 to the end.
+
+That last point is worth reading twice, because it is the least flattering
+fact on this page and the easiest to miss. Every metric above is computed
+over a 70-day window, but the strategy only actually traded for the first
+9% of it. `n_days_observed: 70` counts *bars in the sample*, not days on
+which anything happened, and a reader who takes the headline return as a
+70-day result is reading it wrong. If the kill-switch had not fired, or had
+fired on a backtest that a human reset, the rest of the sample would have
+been live — and would have compounded whatever the next six weeks held
+rather than sitting flat.
+
+The halt itself is the risk system working as designed, not a failure
+separate from it.
 
 This is the number that matters most, so it's worth stating plainly: the
 model is *right more often than a coin flip* on real data, and the
@@ -151,17 +166,17 @@ section warns about, and it's what a backtest is for.
 An earlier revision of this build computed total exposure once per bar and
 then opened every symbol against that single stale figure, so four symbols
 at 20% each cleared a 60% cap and left the book **80% exposed** — the cap was
-decorative. Two defects were fixed under that heading, and the second moved
-these numbers a second time, so they are worth keeping apart:
+decorative. Three fixes landed under that heading, and they moved these
+numbers each time, so they are worth keeping apart:
 
-| | Cap unenforced | Cap enforced, symbols served in order | Cap enforced, book allocated proportionally |
-|---|---|---|---|
-| Total return | -15.12% | -15.13% | **-14.95%** |
-| Sharpe | -6.29 | -5.16 | **-4.66** |
-| Win rate | 25.3% | 19.7% | **22.5%** |
-| Profit factor | 0.279 | 0.185 | 0.181 |
-| Peak exposure | **80.1%** | 60.3% | 60.3% |
-| Trades | — | 447 | 929 |
+| | Cap unenforced | Cap enforced, symbols served in order | Cap enforced, book allocated proportionally | …and the halt liquidates |
+|---|---|---|---|---|
+| Total return | -15.12% | -15.13% | -14.95% | **-15.13%** |
+| Sharpe | -6.29 | -5.16 | -4.66 | -4.69 |
+| Win rate | 25.3% | 19.7% | 22.5% | 23.0% |
+| Profit factor | 0.279 | 0.185 | 0.181 | 0.181 |
+| Peak exposure | **80.1%** | 60.3% | 60.3% | 60.3% |
+| Trades | — | 447 | 929 | 928 |
 
 **The first defect was the cap itself.** Enforcing it properly made the
 strategy look *worse*, and two things drove that — neither of which means
@@ -201,6 +216,21 @@ book that reads as compliant can still be pushed over its cap by a new entry
 opening at full allocated size: measured at **71.1%** against a 60% cap until
 the banded book itself was checked against the cap, rather than the book the
 bar started with.
+
+**The third fix was the halt itself.** The kill-switch used to zero only the
+symbols a bar was about to *add* to, on the reasoning that refusing an entry
+means refusing a position. But a position that is merely being held is
+neither adding nor trimming, so it was never put to the gate at all — and
+the book rode straight through the halt still carrying the exposure the
+switch exists to remove. A halted book is now liquidated.
+
+That costs 0.18pp of return here (-14.95% → -15.13%), because the market
+bounced after the liquidation and a book left standing would have recovered
+a little of it. That is not an argument for leaving it standing: a kill
+switch that you only obey when it turns out to have been wrong is not a kill
+switch. The honest reading is that this run is a 6.5-day sample followed by
+62 days of a flat, halted account, and the headline numbers describe the
+6.5 days.
 
 The pre-fix numbers were *better-looking and less true*. A cap that reads
 80% against a 60% limit isn't a conservative result, it's an uncontrolled
@@ -308,8 +338,9 @@ configurable in `config/config.yaml`:
   get held does not depend on the order they are iterated in
   (`strategy/risk.py`)  
 - Daily loss limit that blocks new entries for the rest of the day
-- **Max drawdown kill-switch** that halts ALL trading and stays halted
-  until a human calls `reset_halt()` — intentionally not automatic
+- **Max drawdown kill-switch** that halts ALL trading, liquidates the book,
+  and stays halted until a human calls `reset_halt()` — intentionally not
+  automatic
 - A no-trade rebalance band, so a continuously-varying confidence score
   doesn't generate a fee-paying trade on every single bar (see
   `RiskManager.is_significant_change` — an earlier version of this

@@ -378,6 +378,77 @@ def test_engine_cap_holds_when_a_suppressed_leg_meets_a_new_entry():
     )
 
 
+def test_kill_switch_flattens_the_whole_book():
+    """
+    The drawdown kill-switch is a liquidation, not a pause.
+
+    On halt the engine used to zero only the symbols that bar was about to ADD
+    to. A position that is merely being held is neither adding nor trimming,
+    so it was never put to the entry gate at all, and the book rode straight
+    through the halt still carrying the exposure the switch exists to remove.
+
+    The slide is deliberate: 12% down over 20 bars. Large enough to take a 60%
+    book past a 5% drawdown limit, and small enough that the re-size it
+    implies (about 5%) stays inside the 20% no-trade band -- so the position
+    is suppressed, never reaches the gate, and the old code left it standing.
+    A violent enough crash hides the bug instead, because the vol-scaled
+    target genuinely grows and the symbol does get asked about.
+    """
+    symbols = ["A/USD", "B/USD", "C/USD"]
+    n = LOOKBACK_BARS + 400
+    idx = pd.date_range("2026-01-01", periods=n, freq="5min", tz="UTC")
+
+    prices = np.full(n, 100.0)
+    prices[LOOKBACK_BARS + 200: LOOKBACK_BARS + 220] = 100.0 * np.linspace(1.0, 0.88, 20)
+    prices[LOOKBACK_BARS + 220:] = 88.0
+    df = pd.DataFrame(
+        {"open": prices, "high": prices * 1.001, "low": prices * 0.999,
+         "close": prices, "volume": 1000.0},
+        index=idx,
+    )
+
+    limits = RiskLimits(max_drawdown_pct=5.0, max_position_pct=20.0, min_rebalance_fraction=0.2)
+    risk = RiskManager(limits, starting_equity=100_000.0)
+    engine = BacktestEngine(
+        price_data={s: df for s in symbols},
+        strategies={s: AlwaysLongStrategy() for s in symbols},
+        risk_manager=risk,
+        starting_equity=100_000.0,
+        fee_bps=10.0,
+        slippage_bps=5.0,
+    )
+    result = engine.run()
+
+    assert result.equity_curve["halted"].any(), "test is vacuous unless the kill-switch fired"
+    halt_bar = result.equity_curve["halted"].idxmax()
+    assert (result.positions_history.loc[:halt_bar, symbols] != 0.0).any().any(), (
+        "test is vacuous unless the book was actually invested when the halt fired"
+    )
+
+    # From the bar the switch fires onward the book is empty -- not merely no
+    # longer growing.
+    after = result.positions_history.loc[halt_bar:]
+    assert (after[symbols] == 0.0).all().all(), (
+        f"the book was still held through the halt: {after.iloc[-1].to_dict()}"
+    )
+    assert all(qty == 0.0 for qty in result.final_positions.values()), (
+        f"expected a flat book at the end, got {result.final_positions}"
+    )
+
+    # ...and being flat, equity stops moving entirely.
+    assert result.equity_curve.loc[halt_bar:, "equity"].nunique() == 1, (
+        "equity kept moving after a halt with an empty book"
+    )
+
+    # The liquidation fills say what they are. A trade log that attributes a
+    # forced exit to the model's signal misreports the one thing it records.
+    closing = [t for t in result.trades if t.timestamp == halt_bar]
+    assert closing, "expected liquidation fills on the bar the switch fired"
+    assert all("max_drawdown_kill_switch" in t.reason for t in closing), (
+        f"liquidation fills were labelled as signal trades: {[t.reason for t in closing]}"
+    )
+
+
 def test_mismatched_symbol_indices_raise():
     idx1 = pd.date_range("2026-01-01", periods=200, freq="5min", tz="UTC")
     idx2 = pd.date_range("2026-01-02", periods=200, freq="5min", tz="UTC")  # different range entirely

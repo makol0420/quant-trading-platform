@@ -192,15 +192,34 @@ class BacktestEngine:
                 price = prices[s]
                 current_qty = positions[s]
                 desired_qty = banded[s]
+                reason = reasons[s]
 
-                is_adding_risk = abs(desired_qty) > abs(current_qty) or (
-                    current_qty != 0 and desired_qty != 0 and np.sign(current_qty) != np.sign(desired_qty)
-                )
+                if self.risk.state.trading_halted:
+                    # The drawdown kill-switch is a liquidation, not a pause.
+                    # Zeroing only the symbols this bar was about to ADD to
+                    # left every other leg untouched, so the book rode straight
+                    # through the halt still carrying the exposure the switch
+                    # exists to remove -- and a position that is merely being
+                    # held is neither adding nor trimming, so it was never
+                    # asked about at all. A halted book goes flat.
+                    desired_qty = 0.0
+                    # Label the fill for what it is. These trades are not the
+                    # model's decision, and a trade log that attributes a
+                    # forced liquidation to a signal is lying about the only
+                    # thing it is there to record.
+                    reason = self.risk.state.halt_reason
+                else:
+                    is_adding_risk = abs(desired_qty) > abs(current_qty) or (
+                        current_qty != 0 and desired_qty != 0 and np.sign(current_qty) != np.sign(desired_qty)
+                    )
 
-                if is_adding_risk:
-                    allowed, reason = self.risk.check_entry_allowed(equity, allocated_pct)
-                    if not allowed:
-                        desired_qty = 0.0 if self.risk.state.trading_halted else current_qty
+                    if is_adding_risk:
+                        allowed, reason = self.risk.check_entry_allowed(equity, allocated_pct)
+                        if not allowed:
+                            # No liquidation here: what this branch rejects is
+                            # an ENTRY, and the daily-loss limit is a pause on
+                            # new risk rather than an exit from existing risk.
+                            desired_qty = current_qty
 
                 delta = desired_qty - current_qty
                 if abs(delta) * price < 1e-8:
@@ -219,7 +238,7 @@ class BacktestEngine:
                 trades.append(
                     Trade(
                         timestamp=ts, symbol=s, side=side, qty=abs(delta),
-                        price=exec_price, fee=fee, reason=reasons[s],
+                        price=exec_price, fee=fee, reason=reason,
                     )
                 )
 

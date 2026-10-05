@@ -144,15 +144,23 @@ class TradingOrchestrator:
             price = latest_prices[symbol]
             current_qty = positions[symbol]
             desired_qty = banded[symbol]
+            reason = self.recent_signals[symbol]["reason"]
 
-            is_adding_risk = abs(desired_qty) > abs(current_qty) or (
-                current_qty != 0 and desired_qty != 0
-                and (current_qty > 0) != (desired_qty > 0)
-            )
-            if is_adding_risk:
-                allowed, reason = self.risk.check_entry_allowed(equity, allocated_pct)
-                if not allowed:
-                    desired_qty = 0.0 if self.risk.state.trading_halted else current_qty
+            if self.risk.state.trading_halted:
+                # The kill-switch liquidates the whole book rather than
+                # declining to add to it -- see the note in backtest/engine.py.
+                desired_qty = 0.0
+                reason = self.risk.state.halt_reason
+            else:
+                is_adding_risk = abs(desired_qty) > abs(current_qty) or (
+                    current_qty != 0 and desired_qty != 0
+                    and (current_qty > 0) != (desired_qty > 0)
+                )
+                if is_adding_risk:
+                    allowed, reason = self.risk.check_entry_allowed(equity, allocated_pct)
+                    if not allowed:
+                        # An entry is being refused, not a position exited.
+                        desired_qty = current_qty
 
             delta = desired_qty - current_qty
             if abs(delta) * price >= 1.0:  # skip dust-sized adjustments
@@ -166,7 +174,7 @@ class TradingOrchestrator:
                     {
                         "timestamp": now.isoformat(), "symbol": symbol, "side": side,
                         "qty": result.filled_qty, "price": result.fill_price,
-                        "status": result.status, "reason": self.recent_signals[symbol]["reason"],
+                        "status": result.status, "reason": reason,
                     }
                 )
 
