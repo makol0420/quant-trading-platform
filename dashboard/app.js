@@ -8,8 +8,36 @@
 let chart = null;
 let refreshTimer = null;
 let backtestCache = null;
+let chartRendered = false;
 
 const els = {};
+
+/**
+ * Resolves once layout.js has injected the sidebar and topbar.
+ *
+ * This page's scripts run at the end of <body>, so they execute while the
+ * topbar is still an empty <header> -- layout.js fills it in asynchronously
+ * and only then fires `layout:ready`. Reading the DOM before that point
+ * returns null for anything the topbar owns, and the first null dereference
+ * threw out of refresh(), taking the equity chart and the polling timer down
+ * with it and leaving the page on its literal "Loading…" placeholders. The
+ * contract is layout.js's; this is the page script honouring it instead of
+ * racing it.
+ */
+function whenLayoutReady() {
+  return new Promise((resolve) => {
+    if (window.__qtpLayoutReady) return resolve();
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    document.addEventListener("layout:ready", done, { once: true });
+    // A layout.js that 404s or wedges must not leave the dashboard blank.
+    setTimeout(done, 3000);
+  });
+}
 
 function initEls() {
   els.banner = document.getElementById("banner");
@@ -27,7 +55,8 @@ function initEls() {
   els.startBtn = document.getElementById("start-bot");
   els.stopBtn = document.getElementById("stop-bot");
   els.actionMsg = document.getElementById("action-msg");
-  els.sessionState = document.getElementById("session-state");
+  // No #session-state here: that pill lives in the topbar and is owned by
+  // layout.js, which also refreshes it on pages that never load app.js.
 }
 
 /** Hourly downsample so a 20k-point equity curve stays a readable chart. */
@@ -220,11 +249,6 @@ function renderStatus(state, session) {
   const halted = !!state.trading_halted;
   const running = !!state.running;
 
-  els.sessionState.textContent = running
-    ? `🟢 Paper Trading${session && session.cycles ? ` · ${session.cycles} cycles` : ""}`
-    : "⚪ Paper Trading (stopped)";
-  els.sessionState.className = "status" + (halted ? " halted" : running ? "" : " off");
-
   if (halted && state.halt_reason) {
     els.status.innerHTML = `<span class="badge sell">Halted</span> ${state.halt_reason}`;
   } else if (!running) {
@@ -268,11 +292,13 @@ async function refresh() {
 
   if (points.length > 1) {
     renderSessionChart(points);
+    chartRendered = true;
   } else {
     const backtest = backtestCache || (await loadBacktest());
     if (backtest) {
       if (!backtestCache) els.banner.innerHTML = dashProvenanceBanner(backtest.data_source);
       renderBacktestChart(backtest);
+      chartRendered = true;
     } else {
       els.chartTitle.textContent = "Equity";
       els.chartNote.textContent = "No equity data available yet.";
@@ -305,19 +331,38 @@ async function stopBot() {
   await refresh();
 }
 
+/**
+ * One polling pass. Never rejects, so a single bad cycle cannot kill the
+ * interval that would have recovered from it.
+ */
+async function tick() {
+  try {
+    const state = await loadState();
+    // Repaint everything while the page is still incomplete: a session is
+    // running, or no equity curve has been drawn yet (the backtest artifacts
+    // may still be building on a cold container, which 404s until they land).
+    // Once the dashboard is whole and idle, only the status panel changes and
+    // polling the rest would be pure load.
+    if (state.running || !chartRendered) await refresh();
+    else renderStatus(state, null);
+  } catch (err) {
+    console.error("[dashboard] refresh failed:", err);
+    els.banner.innerHTML = `<div class="banner danger">Could not render the dashboard: ${err.message}</div>`;
+  }
+}
+
 async function init() {
+  await whenLayoutReady();
   initEls();
   if (els.startBtn) els.startBtn.addEventListener("click", startBot);
   if (els.stopBtn) els.stopBtn.addEventListener("click", stopBot);
 
-  await refresh();
-  // Only poll while a session is actually live; an idle dashboard has
-  // nothing new to show and polling it forever is pointless load.
-  refreshTimer = setInterval(async () => {
-    const state = await loadState();
-    if (state.running) await refresh();
-    else renderStatus(state, null);
-  }, 5000);
+  // The timer is registered BEFORE the first pass and independently of it.
+  // The first refresh can fail for reasons that resolve themselves, and it
+  // used to be the only thing standing between the page and its polling loop,
+  // so any single error left the dashboard on "Loading…" permanently.
+  refreshTimer = setInterval(tick, 5000);
+  await tick();
 }
 
 init();

@@ -51,6 +51,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   await refreshSessionPill();
   setInterval(refreshSessionPill, 10000);
 
-  // Page scripts wait on this rather than racing the injected markup.
+  // Page scripts wait on this rather than racing the injected markup. The
+  // flag covers a script that starts listening after the event has fired.
+  window.__qtpLayoutReady = true;
   document.dispatchEvent(new CustomEvent("layout:ready"));
 });
