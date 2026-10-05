@@ -27,9 +27,9 @@ from execution.paper import PaperExecutionClient
 from strategy.base import Strategy
 from strategy.risk import (
     RiskManager,
-    exposure_trim_scale,
+    exposure_scale_to_cap,
     gross_exposure_pct,
-    projected_exposure_pct,
+    is_over_exposure_cap,
 )
 from features.indicators import atr as compute_atr
 
@@ -81,12 +81,11 @@ class TradingOrchestrator:
 
         positions = {symbol: self.execution.get_position(symbol) for symbol in symbols}
         self.risk.state.open_exposure_pct = gross_exposure_pct(positions, latest_prices, equity)
-        # Bounds the held book, not just new entries -- see
-        # strategy/risk.py::exposure_trim_scale.
-        trim_scale = exposure_trim_scale(
-            positions, latest_prices, equity, self.risk.limits.max_total_exposure_pct
-        )
 
+        # --- Pass 1: what every strategy wants, before the portfolio cap.
+        # All symbols, before any order: the cap constrains the book as a
+        # whole, so deciding symbol-by-symbol makes it first-come-first-served.
+        intents: dict[str, float] = {}
         for symbol in symbols:
             history = histories[symbol]
             signal = self.strategies[symbol].generate_signal(symbol, history)
@@ -99,33 +98,59 @@ class TradingOrchestrator:
 
             price = latest_prices[symbol]
             atr_val = float(compute_atr(history["high"], history["low"], history["close"]).iloc[-1])
-            current_qty = positions[symbol]
 
-            desired_qty = 0.0
+            want = 0.0
             if signal.target_position != 0 and atr_val > 0:
                 raw_qty = self.risk.position_size(equity, price, atr_val, signal.confidence)
-                desired_qty = raw_qty if signal.target_position > 0 else -raw_qty
+                want = raw_qty if signal.target_position > 0 else -raw_qty
+            intents[symbol] = want
 
-            if not self.risk.is_significant_change(current_qty, desired_qty):
-                desired_qty = current_qty  # change too small to be worth the transaction cost
+        # One allocation factor for the whole book -- uniform, so the result
+        # cannot depend on symbol ordering. Scaled from the raw intents: what
+        # the strategies want is the demand being rationed, and the band below
+        # is a per-symbol cost filter that has no business changing the size of
+        # the book being rationed.
+        scale = exposure_scale_to_cap(
+            intents, latest_prices, equity, self.risk.limits.max_total_exposure_pct
+        )
+        allocated = {symbol: qty * scale for symbol, qty in intents.items()}
 
-            # After the band, so a cap breach can't be suppressed as noise;
-            # risk-reducing, so it needs no gate.
-            if trim_scale < 1.0:
-                desired_qty *= trim_scale
+        # The no-trade band, on the sizes actually being asked for and so after
+        # the allocation rather than before it -- see the longer note in
+        # backtest/engine.py. Banding the pre-allocation intent lets rescaled
+        # targets through unvetted on every bar, which pays fees continuously.
+        banded = {
+            symbol: allocated[symbol]
+            if self.risk.is_significant_change(positions[symbol], allocated[symbol])
+            else positions[symbol]
+            for symbol in symbols
+        }
+
+        # ...and if the banded book breaches, the legs holding above their
+        # allocation give way, so the cap bounds the book rather than trailing
+        # it by a bar.
+        if is_over_exposure_cap(
+            banded, latest_prices, equity, self.risk.limits.max_total_exposure_pct
+        ):
+            banded = {
+                symbol: allocated[symbol] if abs(positions[symbol]) > abs(allocated[symbol]) else qty
+                for symbol, qty in banded.items()
+            }
+
+        allocated_pct = gross_exposure_pct(banded, latest_prices, equity)
+
+        # --- Pass 2: gate and execute.
+        for symbol in symbols:
+            price = latest_prices[symbol]
+            current_qty = positions[symbol]
+            desired_qty = banded[symbol]
 
             is_adding_risk = abs(desired_qty) > abs(current_qty) or (
                 current_qty != 0 and desired_qty != 0
                 and (current_qty > 0) != (desired_qty > 0)
             )
             if is_adding_risk:
-                # Against live positions, so opening one symbol can't spend
-                # exposure budget the next symbol is also about to spend --
-                # see strategy/risk.py::check_entry_allowed.
-                projected_pct = projected_exposure_pct(
-                    positions, latest_prices, equity, symbol, desired_qty
-                )
-                allowed, reason = self.risk.check_entry_allowed(equity, projected_pct)
+                allowed, reason = self.risk.check_entry_allowed(equity, allocated_pct)
                 if not allowed:
                     desired_qty = 0.0 if self.risk.state.trading_halted else current_qty
 
@@ -133,16 +158,15 @@ class TradingOrchestrator:
             if abs(delta) * price >= 1.0:  # skip dust-sized adjustments
                 side = "buy" if delta > 0 else "sell"
                 result = self.execution.place_order(symbol, side, abs(delta))
-                # Re-read rather than assuming the full delta filled: a
-                # partial fill leaves the book different from `desired_qty`,
-                # and later symbols this cycle must be gated against what is
-                # actually held.
+                # Re-read rather than assuming the full delta filled: the
+                # snapshot below reports actual holdings, and a partial fill
+                # leaves the book different from `desired_qty`.
                 positions[symbol] = self.execution.get_position(symbol)
                 self.trade_log.append(
                     {
                         "timestamp": now.isoformat(), "symbol": symbol, "side": side,
                         "qty": result.filled_qty, "price": result.fill_price,
-                        "status": result.status, "reason": signal.reason,
+                        "status": result.status, "reason": self.recent_signals[symbol]["reason"],
                     }
                 )
 

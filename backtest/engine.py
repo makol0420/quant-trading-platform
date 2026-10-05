@@ -26,9 +26,9 @@ import pandas as pd
 from strategy.base import Strategy
 from strategy.risk import (
     RiskManager,
-    exposure_trim_scale,
+    exposure_scale_to_cap,
     gross_exposure_pct,
-    projected_exposure_pct,
+    is_over_exposure_cap,
 )
 from features.indicators import atr as compute_atr
 
@@ -112,56 +112,93 @@ class BacktestEngine:
             self.risk.update_equity(equity, ts)
             self.risk.state.open_exposure_pct = gross_exposure_pct(positions, prices, equity)
 
-            # The entry gate below bounds exposure when a position is opened.
-            # It does not bound the book afterwards: a position sized against
-            # the equity that existed at entry represents a larger share once
-            # equity falls, and the no-trade band deliberately stops it being
-            # resized every bar. Computed once per bar from the bar-start book
-            # and applied to every symbol alike, so the trim is independent of
-            # symbol iteration order. 1.0 when the book is inside its cap.
-            trim_scale = exposure_trim_scale(
-                positions, prices, equity, self.risk.limits.max_total_exposure_pct
-            )
-
+            # --- Pass 1: what every strategy wants, before the portfolio cap.
+            # Gathered for all symbols before anything executes, because the
+            # cap constrains the book as a whole: how much of it each symbol
+            # may hold is not knowable until you know what all of them asked
+            # for. Deciding symbol-by-symbol is what makes a cap
+            # first-come-first-served.
+            intents: dict[str, float] = {}
+            reasons: dict[str, str] = {}
             for s in symbols:
-                df = self.price_data[s]
-                price = prices[s]
-                window = df.iloc[max(0, i - LOOKBACK_BARS + 1): i + 1]
-
+                window = self.price_data[s].iloc[max(0, i - LOOKBACK_BARS + 1): i + 1]
                 signal = self.strategies[s].generate_signal(s, window)
+                reasons[s] = signal.reason
+
                 atr_val = self._atr_series[s].iloc[i]
-
-                current_qty = positions[s]
-                desired_qty = 0.0
-
+                want = 0.0
                 if signal.target_position != 0 and atr_val and atr_val > 0 and not np.isnan(atr_val):
-                    raw_qty = self.risk.position_size(equity, price, atr_val, signal.confidence)
-                    desired_qty = raw_qty if signal.target_position > 0 else -raw_qty
+                    raw_qty = self.risk.position_size(equity, prices[s], atr_val, signal.confidence)
+                    want = raw_qty if signal.target_position > 0 else -raw_qty
+                intents[s] = want
 
-                if not self.risk.is_significant_change(current_qty, desired_qty):
-                    desired_qty = current_qty  # change too small to be worth the transaction cost
+            # One allocation factor for the whole book -- uniform, so the result
+            # cannot depend on symbol ordering. Scaled from the raw intents:
+            # what the strategies want is the demand being rationed, and the
+            # band below is a per-symbol cost filter that has no business
+            # changing the size of the book being rationed.
+            scale = exposure_scale_to_cap(
+                intents, prices, equity, self.risk.limits.max_total_exposure_pct
+            )
+            allocated = {s: qty * scale for s, qty in intents.items()}
 
-                # Applied after the no-trade band, deliberately: a breach of
-                # the risk cap is not a signal-noise judgement call, so the
-                # band must not be able to suppress the trim. This only
-                # reduces a position, which is why it needs no gate.
-                if trim_scale < 1.0:
-                    desired_qty *= trim_scale
+            # The no-trade band, applied to the sizes actually being asked for
+            # and therefore AFTER the allocation, not before. Allocation moves
+            # a position by an amount nothing has vetted: a book pinned at its
+            # cap is rescaled on every bar as equity and ATR move, and those
+            # rescaled sizes are precisely the small continuous adjustments the
+            # band exists to refuse. Banding the pre-allocation intent instead
+            # lets them through unvetted -- measured at 3,617 fills against
+            # 626, and the band is there to avoid paying fees, so that is a
+            # real regression and not just a number moving.
+            banded = {
+                s: allocated[s]
+                if self.risk.is_significant_change(positions[s], allocated[s])
+                else positions[s]
+                for s in symbols
+            }
+
+            # A suppressed leg keeps what it is already holding, which for a
+            # leg above its allocated share is MORE than its allocation -- and
+            # a leg can sit up to `min_rebalance_fraction` above its
+            # allocation and still be suppressed. So a book that is itself
+            # compliant can be pushed over the cap by a different leg opening
+            # at full allocated size. That is not hypothetical: three legs
+            # each 18.4% above their allocation (inside the 20% band, so
+            # suppressed, 20% each) plus one new leg opening at its allocated
+            # 11% put the book at 71% against a 60% cap on the bundled
+            # backtest -- one bar, because the next bar's correction was no
+            # longer suppressed, but a cap that is only enforced on the
+            # following bar is not a cap.
+            #
+            # When the banded book breaches, the legs holding above their
+            # allocation lose the argument. This stays order-independent and
+            # needs no iteration: every unforced leg ends at or below its
+            # allocation, so the book cannot exceed the allocated book, which
+            # the scale above has already brought inside the cap.
+            if is_over_exposure_cap(banded, prices, equity, self.risk.limits.max_total_exposure_pct):
+                banded = {
+                    s: allocated[s] if abs(positions[s]) > abs(allocated[s]) else qty
+                    for s, qty in banded.items()
+                }
+
+            # The exposure these allocations add up to, passed to the entry
+            # gate rather than a per-symbol projection -- see
+            # strategy/risk.py::check_entry_allowed.
+            allocated_pct = gross_exposure_pct(banded, prices, equity)
+
+            # --- Pass 2: gate and execute.
+            for s in symbols:
+                price = prices[s]
+                current_qty = positions[s]
+                desired_qty = banded[s]
 
                 is_adding_risk = abs(desired_qty) > abs(current_qty) or (
                     current_qty != 0 and desired_qty != 0 and np.sign(current_qty) != np.sign(desired_qty)
                 )
 
                 if is_adding_risk:
-                    # Measured against live `positions` and the pre-trade
-                    # `equity`, so the cap binds on the book as it is being
-                    # built within this bar. Reading a once-per-bar total
-                    # here is the bug that let four symbols open 20% each
-                    # against a 60% cap; symbols are served first-come in
-                    # iteration order, which is inherent to sharing one cap
-                    # sequentially (live trading has the same property).
-                    projected_pct = projected_exposure_pct(positions, prices, equity, s, desired_qty)
-                    allowed, reason = self.risk.check_entry_allowed(equity, projected_pct)
+                    allowed, reason = self.risk.check_entry_allowed(equity, allocated_pct)
                     if not allowed:
                         desired_qty = 0.0 if self.risk.state.trading_halted else current_qty
 
@@ -182,7 +219,7 @@ class BacktestEngine:
                 trades.append(
                     Trade(
                         timestamp=ts, symbol=s, side=side, qty=abs(delta),
-                        price=exec_price, fee=fee, reason=signal.reason,
+                        price=exec_price, fee=fee, reason=reasons[s],
                     )
                 )
 

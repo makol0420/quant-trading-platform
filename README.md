@@ -118,14 +118,14 @@ no data or parameters hand-picked afterward:
 
 | Metric | Value |
 |---|---|
-| Total return | **-15.13%** |
-| CAGR | -44.6% |
-| Sharpe (daily-resampled) | -5.16 |
-| Sortino | -3.88 |
-| Max drawdown | 15.18% (kill-switch limit: 15%) |
-| Win rate | 19.7% |
-| Profit factor | 0.185 |
-| Trades | 447 over 70 days |
+| Total return | **-14.95%** |
+| CAGR | -44.2% |
+| Sharpe (daily-resampled) | -4.66 |
+| Sortino | -4.41 |
+| Max drawdown | 15.07% (kill-switch limit: 15%) |
+| Win rate | 22.5% |
+| Profit factor | 0.181 |
+| Trades | 929 over 70 days |
 | Peak gross exposure | 60.3% (cap: 60%) |
 
 Per-symbol walk-forward AUC (out-of-fold, i.e. genuinely never seen
@@ -142,7 +142,7 @@ working as designed, not a failure separate from it.
 This is the number that matters most, so it's worth stating plainly: the
 model is *right more often than a coin flip* on real data, and the
 strategy *still loses money*. That gap is transaction costs plus a
-win rate that, at 20%, means the few winners don't pay for the many
+win rate that, at 22%, means the few winners don't pay for the many
 losers. It is exactly the outcome the [Why this exists](#why-this-exists--how-to-read-results-honestly)
 section warns about, and it's what a backtest is for.
 
@@ -151,50 +151,66 @@ section warns about, and it's what a backtest is for.
 An earlier revision of this build computed total exposure once per bar and
 then opened every symbol against that single stale figure, so four symbols
 at 20% each cleared a 60% cap and left the book **80% exposed** — the cap was
-decorative. The gate now measures the portfolio as it is being built, and
-separately clamps the *held* book, because a position sized against the
-equity that existed at entry represents a larger share once that equity
-moves (the bundled run drifted to 61.7% over 112 bars on that alone).
+decorative. Two defects were fixed under that heading, and the second moved
+these numbers a second time, so they are worth keeping apart:
 
-That correction is why the figures above differ from the ones published
-before it, and the honest summary is that it made the strategy look **worse
-on win rate, Sharpe, and profit factor, and no better on return**:
+| | Cap unenforced | Cap enforced, symbols served in order | Cap enforced, book allocated proportionally |
+|---|---|---|---|
+| Total return | -15.12% | -15.13% | **-14.95%** |
+| Sharpe | -6.29 | -5.16 | **-4.66** |
+| Win rate | 25.3% | 19.7% | **22.5%** |
+| Profit factor | 0.279 | 0.185 | 0.181 |
+| Peak exposure | **80.1%** | 60.3% | 60.3% |
+| Trades | — | 447 | 929 |
 
-| | Cap unenforced | Cap enforced |
-|---|---|---|
-| Total return | -15.12% | -15.13% |
-| Sharpe | -6.29 | -5.16 |
-| Win rate | 25.3% | 19.7% |
-| Profit factor | 0.279 | 0.185 |
-| Peak exposure | **80.1%** | 60.3% |
+**The first defect was the cap itself.** Enforcing it properly made the
+strategy look *worse*, and two things drove that — neither of which means
+the signal "got worse":
 
-Two things drive the drop, and neither means the strategy "got worse":
-
-1. **The cap decides which trades happen, and it decides arbitrarily.**
-   Symbols are served in iteration order, so the book now admits the first
-   three names and rejects the fourth — not because the fourth signal was
+1. **The cap decides which trades happen, and it decided arbitrarily.**
+   Symbols were served in iteration order, so the book admitted the first
+   three names and rejected the fourth — not because the fourth signal was
    worse, but because it came last. Measured by fixing the entry gate alone,
-   this re-selection accounts for about two-thirds of the win-rate fall
-   (25.3% → 21.8%), and it is a property of the allocation rule, not of the
-   signal.
+   this re-selection accounted for about two-thirds of the win-rate fall
+   (25.3% → 21.8%).
 2. **Trimming realizes losses that were previously left unrealized.** A book
    drifting over its cap gets sold back down, which converts paper drawdown
-   into booked losses — the remaining third of the fall (21.8% → 19.7%).
-   That is the risk system doing its job, and it costs money, as risk
-   systems do.
+   into booked losses — the remaining third (21.8% → 19.7%). That is the
+   risk system doing its job, and it costs money, as risk systems do.
+
+**The second defect was that allocation rule.** Exposure is now rationed by
+one factor applied to the whole book — `exposure_scale_to_cap` in
+`strategy/risk.py` — so every symbol is scaled to a share of the cap rather
+than the last one being rejected outright. Win rate recovers from 19.7% to
+22.5%, most though not all of the 3.5pp that arbitrary re-selection cost,
+and return and Sharpe come back with it.
+
+The price is turnover, exactly as an earlier revision of this file predicted
+it would be: trades go from 447 to 929. A book pinned at its cap is resized
+whenever the mix of demand changes, where before it was left wherever the
+first three symbols happened to put it. That extra cost is real, and it is
+still smaller than what proportionality bought back.
+
+Two subtleties fell out of implementing it, each of which cost a bug before
+it was understood, and both are now pinned by tests. The no-trade band has
+to be applied *after* the allocation rather than before it, because
+allocation resizes positions by amounts the band never vetted — banding the
+pre-allocation intent instead paid fees on 3,617 fills where ~600 were
+warranted. And because the band lets a leg sit slightly *above* its share, a
+book that reads as compliant can still be pushed over its cap by a new entry
+opening at full allocated size: measured at **71.1%** against a 60% cap until
+the banded book itself was checked against the cap, rather than the book the
+bar started with.
 
 The pre-fix numbers were *better-looking and less true*. A cap that reads
 80% against a 60% limit isn't a conservative result, it's an uncontrolled
 one, and the return it produced came from carrying a third more risk than
-the configuration claimed. Anyone comparing the two tables should prefer
-the second.
+the configuration claimed. Anyone comparing these columns should prefer the
+last.
 
-One honest caveat on the fix itself: **first-come-first-served is a weak
-allocation rule.** Serving symbols in iteration order is what a sequential
-live loop does naturally, but it is blind to which signal is strongest.
-A proportional allocation — scaling every position so the book lands on the
-cap rather than rejecting whoever comes last — would be fairer and
-order-independent, at the cost of more turnover. It is not implemented here.
+The allocation is deliberately order-independent, which is the property the
+test suite asserts directly: permuting the symbol list does not change the
+book the portfolio ends up holding.
 
 Open `results/report.html` for the full interactive breakdown, including
 the walk-forward validation timeline for each symbol.
@@ -287,7 +303,10 @@ configurable in `config/config.yaml`:
 - Hard cap on any single position and on total exposure across all positions
   — enforced both when a position is opened and while it is held, since a
   position sized against the equity that existed at entry can represent a
-  larger share of a smaller account later (`strategy/risk.py`)  
+  larger share of a smaller account later. When demand exceeds the cap the
+  book is scaled by one factor applied to every position, so which symbols
+  get held does not depend on the order they are iterated in
+  (`strategy/risk.py`)  
 - Daily loss limit that blocks new entries for the rest of the day
 - **Max drawdown kill-switch** that halts ALL trading and stays halted
   until a human calls `reset_halt()` — intentionally not automatic

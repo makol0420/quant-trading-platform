@@ -72,16 +72,25 @@ class RiskManager:
 
         `projected_exposure_pct` is the portfolio's TOTAL gross exposure as a
         percentage of equity *if this trade executes* -- not the size of the
-        trade itself. That distinction is the whole reason this parameter is
-        named the way it is: an earlier version took the proposed position's
-        size and added it to `state.open_exposure_pct`, which both (a) counted
-        the symbol's existing leg twice when sizing up a position already held,
-        and (b) stayed stale for the rest of a bar, because callers computed
-        total exposure once and then opened several positions against that one
+        trade itself. That distinction is load-bearing. An earlier version took
+        the proposed position's size and added it to `state.open_exposure_pct`,
+        which both counted a symbol's existing leg twice when sizing up, and
+        stayed stale for the rest of the bar because callers computed total
+        exposure once and then judged several symbols against that one
         pre-computed number. Four symbols at 20% each sailed through a 60% cap
-        and landed at 80% exposure. Callers now compute the projected total
-        from live positions (see `projected_exposure_pct` below) so the cap
-        binds on the portfolio, which is what it says it does.
+        and landed at 80% exposure.
+
+        Exposure is now allocated upstream in one shot by
+        `exposure_scale_to_cap`, which is the only way to make the rule
+        order-independent; callers therefore pass the exposure of the book
+        those allocations add up to, not a per-symbol projection (a per-symbol
+        projection would reject whichever symbol happened to be evaluated once
+        the budget looked spent -- first-come-first-served by another name).
+        The exposure branch here is consequently a backstop that the allocator
+        should never let fire, and it shares that allocator's deadband so the
+        two cannot disagree about whether a book is compliant. The halt and
+        daily-loss branches are not backstops; they are the reason this is
+        still called for every entry.
         """
         if self.state.trading_halted:
             return False, self.state.halt_reason
@@ -96,10 +105,10 @@ class RiskManager:
             self.state.halt_reason = f"max_drawdown_kill_switch ({drawdown_pct:.2f}% >= {self.limits.max_drawdown_pct}%)"
             return False, self.state.halt_reason
 
-        if projected_exposure_pct > self.limits.max_total_exposure_pct:
+        if projected_exposure_pct > self.limits.max_total_exposure_pct * (1.0 + EXPOSURE_TOLERANCE):
             return False, (
                 f"max_total_exposure_exceeded "
-                f"({projected_exposure_pct:.1f}% > {self.limits.max_total_exposure_pct}%)"
+                f"({projected_exposure_pct:.1f}% > {self.limits.max_total_exposure_pct}% cap)"
             )
 
         return True, ""
@@ -161,6 +170,11 @@ def gross_exposure_pct(positions: dict[str, float], prices: dict[str, float], eq
     directions.
 
     Returns 0.0 for non-positive equity rather than dividing by zero.
+
+    Note that this measures a book as a whole, so it is not a substitute for
+    asking what a single trade would do: adding a symbol's proposed size to a
+    total that already includes that symbol's existing position counts its
+    current leg twice, and rejects trades that would land exactly on the cap.
     """
     if equity <= 0:
         return 0.0
@@ -168,67 +182,73 @@ def gross_exposure_pct(positions: dict[str, float], prices: dict[str, float], eq
     return gross / equity * 100
 
 
-def projected_exposure_pct(
-    positions: dict[str, float],
-    prices: dict[str, float],
-    equity: float,
-    symbol: str,
-    desired_qty: float,
-) -> float:
-    """
-    What `gross_exposure_pct` would read if `symbol`'s position became
-    `desired_qty`, with every other position unchanged.
-
-    Subtracting the symbol's existing leg before adding the new one is what
-    makes the total-exposure gate correct when sizing an existing position
-    up, down, or through zero into a short -- not just when opening a fresh
-    one. Callers must evaluate this per symbol against live positions, not
-    once per bar: computing the portfolio's exposure once and then testing
-    several symbols against that single stale number is how four 20%
-    positions clear a 60% cap and leave the book 80% exposed.
-    """
-    if equity <= 0:
-        return 0.0
-    gross = sum(abs(qty) * prices[s] for s, qty in positions.items())
-    price = prices[symbol]
-    gross += (abs(desired_qty) - abs(positions.get(symbol, 0.0))) * price
-    return gross / equity * 100
+# Deadband on acting against the exposure cap, shared by the allocator
+# (`exposure_scale_to_cap`) and the entry gate (`check_entry_allowed`) so the
+# two cannot disagree about whether a book is compliant. Acting is itself a
+# trade -- it pays fees and slippage -- so reacting to a 0.01pp breach would
+# bleed cost to fix a rounding error.
+EXPOSURE_TOLERANCE = 0.005
 
 
-# How far over the cap the book may drift before it is trimmed back, as a
-# fraction of the cap. Trimming is itself a trade -- it pays fees and
-# slippage -- so reacting to a 0.01pp breach would bleed cost for nothing.
-# 0.5% of a 60% cap is 0.3pp: small enough that the cap still reads as
-# enforced, wide enough that equity has to move meaningfully to re-trigger.
-EXPOSURE_TRIM_TOLERANCE = 0.005
-
-
-def exposure_trim_scale(
+def is_over_exposure_cap(
     positions: dict[str, float],
     prices: dict[str, float],
     equity: float,
     max_total_exposure_pct: float,
-    tolerance: float = EXPOSURE_TRIM_TOLERANCE,
+    tolerance: float = EXPOSURE_TOLERANCE,
+) -> bool:
+    """
+    True when a HELD book is past its exposure cap, beyond the deadband.
+
+    Callers use this to decide whether the cap outranks the no-trade band. The
+    band exists to avoid paying fees for changes too small to matter, which is
+    a judgement about signal noise -- but it will happily decline to shrink a
+    book that is genuinely over its risk limit, because a slow drift produces
+    exactly the small per-bar deltas the band is designed to ignore. When this
+    returns True the cap wins and the correction goes through unscaled.
+    """
+    if equity <= 0:
+        return False
+    return gross_exposure_pct(positions, prices, equity) > max_total_exposure_pct * (1.0 + tolerance)
+
+
+def exposure_scale_to_cap(
+    positions: dict[str, float],
+    prices: dict[str, float],
+    equity: float,
+    max_total_exposure_pct: float,
+    tolerance: float = EXPOSURE_TOLERANCE,
 ) -> float:
     """
-    Factor to scale every open position by to bring the book back inside its
-    total-exposure cap. Returns 1.0 when no trim is needed.
+    Factor to multiply a whole book of desired positions by so that its total
+    gross exposure lands inside `max_total_exposure_pct`. Returns 1.0 when the
+    book already fits.
 
-    The entry gate bounds exposure at the moment a position is opened, but a
-    position sized against the equity that existed *then* represents a larger
-    share of a smaller equity later -- and the no-trade band deliberately
-    stops positions being resized every bar, so the book drifts past its cap
-    and sits there. Measured on the bundled backtest: 61.7% against a 60% cap
-    across 112 bars, with cash untouched throughout, i.e. purely equity
-    falling under a fixed notional. A cap that only binds at entry is not the
-    "hard cap on total exposure" it claims to be.
+    This is the platform's position-allocation rule. Callers hand over the book
+    they WOULD hold and get back the fraction of it they are allowed to hold,
+    which makes the cap order-independent: when demand exceeds it, every
+    position is scaled by the same factor rather than whichever symbols happen
+    to be evaluated last being rejected outright while the first ones take the
+    entire budget. First-come-first-served is what a naive sequential loop
+    does, and it quietly turns symbol ordering into a portfolio decision -- on
+    the bundled backtest it rejected the fourth of four equivalent signals
+    purely for arriving last, which accounted for about two-thirds of a 5.6pp
+    win-rate gap between two runs of the same strategy.
 
-    Reducing risk is never gated, so callers apply this directly rather than
-    routing it through `check_entry_allowed`.
+    Scaling the desired book also subsumes clamping the held one. A position
+    sized against the equity that existed at entry represents a larger share
+    once that equity moves, and the no-trade band deliberately suppresses the
+    resize that would correct it, so the book would otherwise drift past its
+    cap and sit there -- measured at 61.7% against a 60% cap across 112 bars,
+    with cash untouched throughout, i.e. purely equity moving under a fixed
+    notional.
+
+    The tolerance is a deadband on acting, not slack in the cap: the resulting
+    book may sit up to `tolerance` above the limit rather than churning to
+    correct a rounding error.
     """
     if equity <= 0:
         return 1.0
-    gross = gross_exposure_pct(positions, prices, equity)
-    if gross <= max_total_exposure_pct * (1.0 + tolerance):
+    if not is_over_exposure_cap(positions, prices, equity, max_total_exposure_pct, tolerance):
         return 1.0
-    return max_total_exposure_pct / gross
+    return max_total_exposure_pct / gross_exposure_pct(positions, prices, equity)

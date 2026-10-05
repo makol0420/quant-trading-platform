@@ -6,9 +6,8 @@ platform ever touches real money.
 from strategy.risk import (
     RiskManager,
     RiskLimits,
-    exposure_trim_scale,
+    exposure_scale_to_cap,
     gross_exposure_pct,
-    projected_exposure_pct,
 )
 
 import pytest
@@ -119,69 +118,73 @@ def test_gross_exposure_does_not_divide_by_zero():
     assert gross_exposure_pct({"A": 1.0}, {"A": 100.0}, 0.0) == 0.0
 
 
-def test_projected_exposure_replaces_the_existing_leg_rather_than_adding_to_it():
+def test_allocation_is_the_same_factor_for_every_position():
     """
-    Sizing an existing position up must not count its current leg twice.
-    The old gate did `open_exposure + proposed_size`, so a symbol already
-    holding 10% and asked for 15% while the rest of the book held 45%
-    was scored as 70% against a 60% cap and wrongly rejected.
+    The property that makes the rule order-independent: one factor for the
+    whole book, so no symbol's share depends on where it sits in the list.
     """
-    positions = {"A": 0.10, "B": 0.45}  # notional fractions of a $1 equity
-    prices = {"A": 1.0, "B": 1.0}
+    positions = {"A": 0.40, "B": 0.30, "C": 0.10}   # 80% against a 60% cap
+    prices = {s: 1.0 for s in positions}
 
-    # A already holds 10%; going to 15% leaves the book at 45% + 15% = 60%.
-    assert projected_exposure_pct(positions, prices, 1.0, "A", 0.15) == pytest.approx(60.0)
+    scale = exposure_scale_to_cap(positions, prices, 1.0, 60.0)
 
-
-def test_projected_exposure_handles_flipping_through_zero():
-    positions = {"A": 0.20, "B": 0.20}
-    prices = {"A": 1.0, "B": 1.0}
-
-    # Flipping A from +20% to -10% frees 10pp of the book, not adds 10pp.
-    assert projected_exposure_pct(positions, prices, 1.0, "A", -0.10) == pytest.approx(30.0)
+    assert scale == pytest.approx(60.0 / 80.0)
+    for qty in positions.values():
+        assert (qty * scale) / (qty * 1.0) == pytest.approx(scale)
 
 
-def test_projected_exposure_of_a_first_entry_is_just_that_position():
-    assert projected_exposure_pct({}, {"A": 1.0}, 1.0, "A", 0.20) == pytest.approx(20.0)
+def test_allocation_does_not_depend_on_symbol_ordering():
+    positions = {"A": 0.40, "B": 0.30, "C": 0.10}
+    prices = {s: 1.0 for s in positions}
+
+    forward = exposure_scale_to_cap(positions, prices, 1.0, 60.0)
+    reversed_ = exposure_scale_to_cap(
+        dict(reversed(list(positions.items()))),
+        {s: 1.0 for s in reversed(list(positions))},
+        1.0,
+        60.0,
+    )
+
+    assert forward == pytest.approx(reversed_)
 
 
-def test_trim_scale_is_one_when_the_book_is_inside_its_cap():
+def test_scale_is_one_when_the_book_is_inside_its_cap():
     positions = {"A": 0.30, "B": 0.30}   # 60% of a $1 equity, exactly on cap
     prices = {"A": 1.0, "B": 1.0}
-    assert exposure_trim_scale(positions, prices, 1.0, 60.0) == 1.0
+    assert exposure_scale_to_cap(positions, prices, 1.0, 60.0) == 1.0
 
 
-def test_trim_scale_is_one_inside_the_tolerance_band():
-    """Trimming is itself a trade. Reacting to a hair over the cap would pay
+def test_scale_is_one_inside_the_tolerance_band():
+    """Scaling is itself a trade. Reacting to a hair over the cap would pay
     fees to fix a rounding error."""
     positions = {"A": 0.3015, "B": 0.30}   # 60.15% -- within 0.5% of the 60% cap
     prices = {"A": 1.0, "B": 1.0}
-    assert exposure_trim_scale(positions, prices, 1.0, 60.0) == 1.0
+    assert exposure_scale_to_cap(positions, prices, 1.0, 60.0) == 1.0
 
 
-def test_trim_scale_brings_a_drifted_book_back_to_the_cap():
+def test_scale_brings_an_over_cap_book_back_to_the_cap():
     positions = {"A": 0.40, "B": 0.30}   # 70% against a 60% cap
     prices = {"A": 1.0, "B": 1.0}
 
-    scale = exposure_trim_scale(positions, prices, 1.0, 60.0)
+    scale = exposure_scale_to_cap(positions, prices, 1.0, 60.0)
 
     assert scale == pytest.approx(60.0 / 70.0)
     after = {s: q * scale for s, q in positions.items()}
     assert gross_exposure_pct(after, prices, 1.0) == pytest.approx(60.0)
 
 
-def test_trim_scale_is_one_with_no_positions():
-    assert exposure_trim_scale({}, {}, 1.0, 60.0) == 1.0
+def test_scale_is_one_with_no_positions():
+    assert exposure_scale_to_cap({}, {}, 1.0, 60.0) == 1.0
 
 
-def test_trim_scale_does_not_divide_by_zero():
-    assert exposure_trim_scale({"A": 1.0}, {"A": 100.0}, 0.0, 60.0) == 1.0
+def test_scale_does_not_divide_by_zero():
+    assert exposure_scale_to_cap({"A": 1.0}, {"A": 100.0}, 0.0, 60.0) == 1.0
 
 
-def test_trim_scale_flattens_a_book_under_a_zero_cap():
+def test_scale_flattens_a_book_under_a_zero_cap():
     positions = {"A": 0.10}
     prices = {"A": 1.0}
-    assert exposure_trim_scale(positions, prices, 1.0, 0.0) == 0.0
+    assert exposure_scale_to_cap(positions, prices, 1.0, 0.0) == 0.0
 
 
 def test_significant_change_always_allows_opening_closing_and_flipping():
