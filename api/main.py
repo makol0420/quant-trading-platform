@@ -49,6 +49,24 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def no_cache_by_default(request, call_next):
+    """
+    Force revalidation on every response (dashboard HTML/JS/CSS included).
+
+    FileResponse and StaticFiles already set ETag/Last-Modified, so this
+    costs a 304 round-trip, not a re-download -- but without an explicit
+    Cache-Control, browsers apply heuristic caching and can keep serving a
+    pre-deploy app.js/index.html for a while after a push, with nothing in
+    the Network tab to suggest why the "fix" doesn't seem to have landed.
+    That already happened once on this project; this closes it for good
+    instead of relying on everyone remembering to hard-refresh.
+    """
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 def _read_json(path: Path) -> dict | list | None:
     """Read a JSON artifact, treating a missing or corrupt file as absent."""
     if not path.exists():
