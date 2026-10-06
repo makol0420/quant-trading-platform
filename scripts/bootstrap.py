@@ -48,6 +48,7 @@ RESULTS_DIR = BASE_DIR / "results"
 MODELS_DIR = BASE_DIR / "models" / "registry"
 STATE_DIR = BASE_DIR / "runtime_state"
 STATUS_PATH = STATE_DIR / "bootstrap_status.json"
+MANIFEST_PATH = STATE_DIR / "run_manifest.json"
 
 #: How much of a failed step's output to keep for reporting.
 ERROR_TAIL_LINES = 25
@@ -95,6 +96,17 @@ def _write_status(**fields) -> None:
         # kills a build. The mkdir is inside the try for the same reason --
         # an unwritable state directory raises here, not at the open().
         print(f"[bootstrap] could not write status file: {exc}", file=sys.stderr)
+
+
+def _write_manifest(**fields) -> None:
+    """Persist a lightweight run manifest for auditing and health reporting."""
+    payload = {"recorded_at": datetime.now(timezone.utc).isoformat(), **fields}
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with open(MANIFEST_PATH, "w") as f:
+            json.dump(payload, f, indent=2)
+    except OSError as exc:
+        print(f"[bootstrap] could not write run manifest: {exc}", file=sys.stderr)
 
 
 def _rel(path: Path) -> str:
@@ -176,8 +188,6 @@ def run_step(step: Step) -> tuple[bool, str]:
     print(f"\n{'=' * 70}\n[bootstrap] {step.name}: {' '.join(step.argv)}\n{'=' * 70}", flush=True)
     started = time.monotonic()
 
-    # Popen rather than subprocess.run so output can be streamed line by line
-    # *and* kept. run() would force a choice between the two.
     proc = subprocess.Popen(
         [sys.executable, *step.argv],
         cwd=str(BASE_DIR),
@@ -198,8 +208,6 @@ def run_step(step: Step) -> tuple[bool, str]:
               f"(exit {code})", file=sys.stderr, flush=True)
         return False, _summarize_failure(tail, step.name, code)
 
-    # A step that exits 0 without producing its artifact would otherwise be
-    # recorded as success and skipped forever on every subsequent restart.
     if not step.is_done():
         missing = ", ".join(_rel(p) for p in step.outputs if not p.exists())
         print(f"[bootstrap] {step.name} exited 0 but produced nothing at: {missing}",
@@ -254,6 +262,14 @@ def main() -> int:
     _write_status(state="complete", step=None, bars=args.bars, scope=args.scope,
                   started_at=started_at, finished_at=datetime.now(timezone.utc).isoformat(),
                   completed=[s.name for s in steps], total_steps=len(steps))
+    _write_manifest(
+        scope=args.scope,
+        bars=args.bars,
+        started_at=started_at,
+        finished_at=datetime.now(timezone.utc).isoformat(),
+        status="complete",
+        steps=[step.name for step in steps],
+    )
 
     print(f"\n[bootstrap] all artifacts ready.")
     print(f"[bootstrap]   models  -> {MODELS_DIR}")
