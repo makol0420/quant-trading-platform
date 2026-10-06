@@ -26,7 +26,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -267,6 +267,16 @@ def pages_js():
 @app.get("/layout.js")
 def layout_js():
     return FileResponse(DASHBOARD_DIR / "layout.js")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """
+    Every browser asks for this on every page. No icon is shipped, and the
+    default 404 puts a red error in the console of all 17 pages -- noise that
+    looks exactly like a real broken asset while you're debugging one.
+    """
+    return Response(status_code=204)
 
 
 @app.get("/report")
