@@ -24,13 +24,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from api import analytics, paper_runner
+from api.security import require_api_key
 
 BASE_DIR = Path(__file__).parent.parent
 PAGES_DIR = BASE_DIR / "pages"
@@ -97,6 +98,7 @@ def health():
     # "building" rather than showing an empty page -- or, as it used to,
     # inventing numbers to fill the gap.
     bootstrap = _read_json(STATE_DIR / "bootstrap_status.json")
+    run_manifest = _read_json(STATE_DIR / "run_manifest.json")
 
     return {
         "status": "ok",
@@ -108,6 +110,7 @@ def health():
         },
         "ready": ready,
         "bootstrap": bootstrap or {"state": "unknown"},
+        "run_manifest": run_manifest,
         "paper_session": session.status() if session else {"running": False},
     }
 
@@ -206,11 +209,12 @@ class PaperStartRequest(BaseModel):
 
 
 @app.post("/api/paper/start")
-def start_paper(req: PaperStartRequest | None = None):
+def start_paper(req: PaperStartRequest | None = None, request: Request = None):
     """
     Start the paper-trading loop against live market data. Paper only --
     see api/paper_runner.py.
     """
+    require_api_key(request, require_for_writes=True)
     req = req or PaperStartRequest()
     try:
         session = paper_runner.start_session(scope=req.scope, poll_seconds=req.poll_seconds)
@@ -225,7 +229,8 @@ def start_paper(req: PaperStartRequest | None = None):
 
 
 @app.post("/api/paper/stop")
-def stop_paper():
+def stop_paper(request: Request):
+    require_api_key(request, require_for_writes=True)
     stopped = paper_runner.stop_session()
     session = paper_runner.get_session()
     return {
